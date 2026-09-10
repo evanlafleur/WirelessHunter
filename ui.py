@@ -77,14 +77,16 @@ class UI:
         else:
             self.selected = None
 
-    def _draw_footer(self, up=None, down=None, select=None, back=None):
+    def _draw_footer(self, back=None, select=None, down=None, up=None):
         # Labels are centered in 4 equal columns matching the physical
-        # button order left-to-right (UP, DOWN, SELECT, BACK - see
-        # buttons.py), so each label sits above its actual button.
+        # button order left-to-right, confirmed by pressing each button
+        # and watching `python3 buttons.py` output: BACK, SELECT, DOWN, UP.
+        # (buttons.py's GPIO-to-action wiring itself is unchanged/correct -
+        # this is just visual placement.)
         w, h = config.SCREEN_SIZE
         col_w = w // 4
         y = h - FOOTER_H + 4
-        for i, label in enumerate([up, down, select, back]):
+        for i, label in enumerate([back, select, down, up]):
             if not label:
                 continue
             text = self.font_small.render(label, True, GRAY)
