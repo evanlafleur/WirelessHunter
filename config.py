@@ -1,7 +1,7 @@
 # --- config.py ---
 import os
 
-IFACE = "wlan1mon"          # your Alfa adapter in monitor mode (check with `iw dev`)
+IFACE = "wlan1"             # your Alfa adapter in monitor mode (check with `iw dev`)
 MANUF_FILE = "manuf.raw"    # OUI vendor database shipped alongside this project
 GONE_AFTER_SEC = 180        # mark an AP "gone" if not seen in this many seconds
 CHANNELS_24 = [1, 6, 11]              # quick-hop set for 2.4GHz (expand as needed)
