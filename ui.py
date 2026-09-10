@@ -32,6 +32,17 @@ class UI:
         self.peak_rssi = None
         self.on_track_start = on_track_start   # callback(channel)
         self.on_track_stop = on_track_stop     # callback()
+        self.hide_mode = False  # filters out config.HIDDEN_SSIDS when True
+
+    def toggle_hide_mode(self):
+        self.hide_mode = not self.hide_mode
+        self.cursor = 0
+        self.scroll = 0
+
+    def visible_networks(self, networks):
+        if not self.hide_mode:
+            return networks
+        return [n for n in networks if n["ssid"] not in config.HIDDEN_SSIDS]
 
     def _visible_rows(self):
         h = config.SCREEN_SIZE[1] - HEADER_H - FOOTER_H
@@ -108,7 +119,10 @@ class UI:
 
     def _draw_list(self, networks):
         w = config.SCREEN_SIZE[0]
-        hdr = self.font.render(f"Networks: {len(networks)}", True, WHITE)
+        hdr_text = f"Networks: {len(networks)}"
+        if self.hide_mode:
+            hdr_text += "  [HIDE]"
+        hdr = self.font.render(hdr_text, True, YELLOW if self.hide_mode else WHITE)
         self.screen.blit(hdr, (6, 2))
 
         rows = self._visible_rows()

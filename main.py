@@ -6,6 +6,7 @@
 # into /dev/fb1, bypassing SDL's display drivers entirely.
 
 import queue
+import time
 import pygame
 
 import config
@@ -34,9 +35,25 @@ def main():
     )
 
     clock = pygame.time.Clock()
+    combo_hold_start = None
+    combo_fired = False
     try:
         while True:
-            networks = tracker.snapshot()
+            # UP+DOWN held together for HIDE_MODE_HOLD_SEC toggles hide mode.
+            # Polled here (not via gpiozero callbacks) since it needs both
+            # buttons' live state at once, not an edge-triggered press.
+            both_held = buttons.up.is_pressed and buttons.down.is_pressed
+            if both_held:
+                if combo_hold_start is None:
+                    combo_hold_start = time.monotonic()
+                elif not combo_fired and time.monotonic() - combo_hold_start >= config.HIDE_MODE_HOLD_SEC:
+                    ui.toggle_hide_mode()
+                    combo_fired = True
+            else:
+                combo_hold_start = None
+                combo_fired = False
+
+            networks = ui.visible_networks(tracker.snapshot())
 
             while not actions.empty():
                 action = actions.get()

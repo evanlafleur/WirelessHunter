@@ -1,4 +1,6 @@
 # --- config.py ---
+import os
+
 IFACE = "wlan1mon"          # your Alfa adapter in monitor mode (check with `iw dev`)
 MANUF_FILE = "manuf.raw"    # OUI vendor database shipped alongside this project
 GONE_AFTER_SEC = 180        # mark an AP "gone" if not seen in this many seconds
@@ -7,3 +9,22 @@ CHANNELS_5 = [36, 40, 44, 48, 149, 153, 157, 161]  # common 5GHz channels (regio
 HOP_INTERVAL_SEC = 0.5      # how long to sit on each channel while scanning
 SCREEN_SIZE = (240, 320)    # PiTFT 2.8" resolution, portrait (buttons at bottom)
 FRAMEBUFFER = "/dev/fb1"    # the PiTFT's framebuffer device after driver install
+
+HIDE_MODE_HOLD_SEC = 3.0    # hold UP+DOWN together this long to toggle hide mode
+
+def _load_hidden_ssids(path=".env"):
+    # Minimal .env parser (avoids adding python-dotenv for one key).
+    # Looks for a single HIDDEN_SSIDS=name1,name2 line.
+    hidden = set()
+    if os.path.exists(path):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                if key.strip() == "HIDDEN_SSIDS":
+                    hidden.update(v.strip() for v in value.split(",") if v.strip())
+    return hidden
+
+HIDDEN_SSIDS = _load_hidden_ssids()
