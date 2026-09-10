@@ -10,6 +10,12 @@
 #   GPIO22 -> DOWN
 #   GPIO23 -> SELECT
 #   GPIO27 -> BACK
+#
+# Confirmed by physical test (`python3 buttons.py`, pressing left-to-right):
+# left-to-right on this unit is GPIO17, 22, 23, 27 regardless of the
+# display's rotate= setting - software rotation only changes what's drawn
+# on screen, it doesn't change which physical button is wired to which
+# GPIO pin.
 
 from gpiozero import Button
 
