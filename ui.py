@@ -77,6 +77,20 @@ class UI:
         else:
             self.selected = None
 
+    def _draw_footer(self, up=None, down=None, select=None, back=None):
+        # Labels are centered in 4 equal columns matching the physical
+        # button order left-to-right (UP, DOWN, SELECT, BACK - see
+        # buttons.py), so each label sits above its actual button.
+        w, h = config.SCREEN_SIZE
+        col_w = w // 4
+        y = h - FOOTER_H + 4
+        for i, label in enumerate([up, down, select, back]):
+            if not label:
+                continue
+            text = self.font_small.render(label, True, GRAY)
+            x = i * col_w + (col_w - text.get_width()) // 2
+            self.screen.blit(text, (x, y))
+
     def draw(self, networks, history=None):
         self.screen.fill(BLACK)
         w, h = config.SCREEN_SIZE
@@ -91,7 +105,7 @@ class UI:
         # via FBWriter after calling this.
 
     def _draw_list(self, networks):
-        w, h = config.SCREEN_SIZE
+        w = config.SCREEN_SIZE[0]
         hdr = self.font.render(f"Networks: {len(networks)}", True, WHITE)
         self.screen.blit(hdr, (6, 2))
 
@@ -111,11 +125,10 @@ class UI:
             self.screen.blit(self.font_small.render(line2, True, GRAY), (6, y + 18))
             y += ROW_H
 
-        foot = self.font_small.render("UP/DN move SEL open", True, GRAY)
-        self.screen.blit(foot, (6, h - FOOTER_H + 4))
+        self._draw_footer(up="UP", down="DN", select="OPEN")
 
     def _draw_detail(self, networks):
-        w, h = config.SCREEN_SIZE
+        w = config.SCREEN_SIZE[0]
         n = next((x for x in networks if x["bssid"] == self.selected), None)
         if n is None:
             self.selected = None
@@ -141,11 +154,10 @@ class UI:
             pygame.draw.rect(self.screen, DIM, (10, y + 10, w - 20, 14))
             pygame.draw.rect(self.screen, GREEN, (10, y + 10, bar_w, 14))
 
-        foot = self.font_small.render("SEL: track  BACK: list", True, GRAY)
-        self.screen.blit(foot, (6, h - FOOTER_H + 4))
+        self._draw_footer(select="TRACK", back="LIST")
 
     def _draw_track(self, networks, history):
-        w, h = config.SCREEN_SIZE
+        w = config.SCREEN_SIZE[0]
         n = next((x for x in networks if x["bssid"] == self.selected), None)
         if n is None:
             self.tracking = False
@@ -195,5 +207,4 @@ class UI:
                 pygame.draw.rect(self.screen, GREEN, (x, graph_y + graph_h - bh, bar_w - 1, bh))
                 x += bar_w
 
-        foot = self.font_small.render("BACK: stop tracking", True, GRAY)
-        self.screen.blit(foot, (6, h - FOOTER_H + 4))
+        self._draw_footer(back="STOP")
