@@ -11,6 +11,7 @@
 import pygame
 import config
 from theme import BLACK, WHITE, GRAY, GREEN, YELLOW, DIM, RED, BTN_BACK, HEADER_H, FOOTER_H, ICON_SIZE, TAP_SLOP
+from widgets import draw_button_bar
 
 ROW_H = 84
 
@@ -135,19 +136,6 @@ class UI:
         pygame.draw.polygon(self.screen, GRAY, roof)
         pygame.draw.rect(self.screen, GRAY, (cx - 8, cy - 2, 16, 14))
 
-    def _draw_button_bar(self, buttons):
-        # buttons: list of (label, color), drawn as equal-width tappable
-        # segments spanning the footer.
-        w, h = config.SCREEN_SIZE
-        seg_w = w // len(buttons)
-        y0 = h - FOOTER_H
-        for i, (label, color) in enumerate(buttons):
-            rect = pygame.Rect(i * seg_w + 6, y0 + 8, seg_w - 12, FOOTER_H - 16)
-            pygame.draw.rect(self.screen, color, rect, border_radius=12)
-            text = self.font.render(label, True, BLACK)
-            self.screen.blit(text, (rect.centerx - text.get_width() // 2,
-                                     rect.centery - text.get_height() // 2))
-
     def _draw_list(self, networks):
         w, h = config.SCREEN_SIZE
 
@@ -211,7 +199,7 @@ class UI:
             pygame.draw.rect(self.screen, DIM, (14, y + 16, w - 28, 24))
             pygame.draw.rect(self.screen, GREEN, (14, y + 16, bar_w, 24))
 
-        self._draw_button_bar([("BACK", BTN_BACK), ("TRACK", GREEN)])
+        draw_button_bar(self.screen, self.font, [("BACK", BTN_BACK), ("TRACK", GREEN)])
 
     def _draw_track(self, networks, history):
         w = config.SCREEN_SIZE[0]
@@ -265,4 +253,4 @@ class UI:
                 pygame.draw.rect(self.screen, GREEN, (x, graph_y + graph_h - bh, bar_w - 2, bh))
                 x += bar_w
 
-        self._draw_button_bar([("STOP", RED)])
+        draw_button_bar(self.screen, self.font, [("STOP", RED)])

@@ -2,8 +2,9 @@
 
 Launches into a phone-style home screen with app icons. Currently:
 **WiFi Scanner** (tracks SSIDs/BSSIDs/vendors, live list + detail +
-direction-finding tracking screen) and **Settings** (placeholder for now).
-More apps - and actual settings - get added the same way later.
+direction-finding tracking screen), **Radar** (manual-sweep polar RSSI
+plot - no magnetometer needed, see below), and **Settings** (shutdown/
+reboot for now, more settings later). More apps get added the same way.
 
 This build replaced an earlier Adafruit 2.8" resistive PiTFT (broken touch
 controller, SPI framebuffer, 4 physical buttons) with a 7" DSI capacitive
@@ -141,8 +142,22 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
     one), shows a big live RSSI number, a peak-hold marker, a bar meter,
     and a recent-history trend graph. Tap **STOP** to resume normal
     hopping and return to detail.
-- `settings_app.py` — the **Settings** app; currently just a placeholder
-  screen with a HOME button. Actual settings get added here later
+- `radar_app.py` — the **Radar** app. Pick a target network, then
+  physically rotate your directional antenna while dragging a finger
+  around the on-screen dial to match your heading - the app samples live
+  RSSI at the current angle and plots a blip (closer to center = stronger
+  signal). Sweep a full circle and the blip closest to center marks your
+  best bearing. There's no magnetometer/gyro on this build, so the angle
+  is relative to wherever you started the drag, not true north - you're
+  the sensor, syncing the needle to your own rotation. Tap **BACK** to
+  stop and pick a different target, **RESET** to clear the sweep and
+  start over on the same one
+- `settings_app.py` — the **Settings** app. Currently: **Shut Down** and
+  **Reboot**, each behind a confirm screen (a touchscreen mis-tap
+  shouldn't be able to power the device off). More settings (hidden
+  SSIDs, refresh intervals, etc.) get added here later
+- `widgets.py` — small drawing helpers (currently just the bottom
+  button-bar widget) shared by the WiFi Scanner, Radar, and Settings apps
 - `sniffer.py` — Scapy-based beacon/probe-response capture, hops across a
   channel list covering both 2.4G and 5G, tracks last-seen time per BSSID
 - `oui.py` — offline MAC vendor lookup using a bundled Wireshark-format
@@ -175,6 +190,11 @@ prototype earlier in this build.
 - RSSI on some Realtek monitor-mode drivers is less reliable than on `mt76`
   chips — validate against `airodump-ng` on the same adapter if numbers look off
 - `main.py` handles both `MOUSEBUTTONDOWN/UP` and `FINGERDOWN/UP` events
-  since it's untested which one SDL emits for this panel's touch driver —
-  if taps don't register at all, check which event type actually fires
-  (add a quick `print(event)` in the loop) and let me know
+  (now also `MOUSEMOTION`/`FINGERMOTION` for the Radar app's drag) since
+  it's untested which ones SDL emits for this panel's touch driver — if
+  taps or the radar needle don't register, check which event type
+  actually fires (add a quick `print(event)` in the loop) and let me know
+- The Alfa adapter can only sit on one channel at a time. WiFi Scanner's
+  Tracking screen and Radar's sweep both lock the channel while active -
+  if you start one while the other is also active, whichever locks/
+  unlocks last wins. Not a bug, just don't run both trackers at once

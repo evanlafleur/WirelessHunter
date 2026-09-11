@@ -16,6 +16,7 @@ GRID_TOP = 140
 
 APPS = [
     {"id": "wifi", "label": "WiFi Scanner", "color": (50, 150, 90)},
+    {"id": "radar", "label": "Radar", "color": (50, 110, 170)},
     {"id": "settings", "label": "Settings", "color": (90, 90, 100)},
 ]
 
@@ -84,6 +85,12 @@ class Launcher:
             for h in heights:
                 pygame.draw.rect(self.screen, WHITE, (x, base_y - h, bar_w, h), border_radius=3)
                 x += bar_w + gap
+        elif app_id == "radar":
+            # concentric range rings + a sweep needle
+            for r in (12, 22, 32):
+                pygame.draw.circle(self.screen, WHITE, (cx, cy), r, width=2)
+            end = (cx + int(32 * 0.7), cy - int(32 * 0.7))
+            pygame.draw.line(self.screen, WHITE, (cx, cy), end, 3)
         elif app_id == "settings":
             # three horizontal slider lines with offset knobs
             line_w = 64
