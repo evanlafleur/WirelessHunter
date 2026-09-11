@@ -6,6 +6,7 @@
 # directly (see display.py) - unlike the old PiTFT, no raw framebuffer
 # writing is needed.
 
+import time
 import pygame
 
 import config
@@ -23,9 +24,26 @@ def main():
     display = Display()
 
     clock = pygame.time.Clock()
+    networks = ui.visible_networks(tracker.snapshot())
+    history = None
+    last_refresh = time.monotonic()
+    last_mode = None
     try:
         while True:
-            networks = ui.visible_networks(tracker.snapshot())
+            # Data refresh is throttled separately from the render/touch
+            # loop below (which stays fast for responsiveness): the list
+            # screen only needs a slow trickle, detail/tracking screens
+            # (where you're watching one BSSID's live readings) refresh
+            # faster. Switching screens forces an immediate refresh so the
+            # new screen doesn't show stale data while its timer catches up.
+            mode = "detail" if (ui.selected is not None or ui.tracking) else "list"
+            interval = config.DETAIL_REFRESH_SEC if mode == "detail" else config.LIST_REFRESH_SEC
+            now = time.monotonic()
+            if mode != last_mode or now - last_refresh >= interval:
+                networks = ui.visible_networks(tracker.snapshot())
+                history = tracker.get_history(ui.selected) if ui.tracking and ui.selected else None
+                last_refresh = now
+                last_mode = mode
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -49,7 +67,6 @@ def main():
                     lx, ly = display.physical_to_logical(px, py)
                     ui.touch_up(lx, ly, networks)
 
-            history = tracker.get_history(ui.selected) if ui.tracking and ui.selected else None
             ui.draw(networks, history)
             display.push(ui.screen)
             clock.tick(30)  # touch feels more responsive at a higher rate than the old button UI

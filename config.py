@@ -7,6 +7,9 @@ GONE_AFTER_SEC = 180        # mark an AP "gone" if not seen in this many seconds
 CHANNELS_24 = [1, 6, 11]              # quick-hop set for 2.4GHz (expand as needed)
 CHANNELS_5 = [36, 40, 44, 48, 149, 153, 157, 161]  # common 5GHz channels (region-dependent)
 HOP_INTERVAL_SEC = 0.5      # how long to sit on each channel while scanning
+LIST_REFRESH_SEC = 7.0      # how often the list screen re-checks for networks
+DETAIL_REFRESH_SEC = 2.5    # how often detail/tracking screens re-check (faster,
+                             # since you're actively watching one BSSID's readings)
 # Hosyond 7" DSI touchscreen - native resolution is landscape, but the UI
 # is drawn portrait and rotated onto the physical panel each frame (see
 # display.py). PHYSICAL_SIZE is what pygame.display.set_mode() opens;
