@@ -28,13 +28,19 @@ class Display:
         # same UI element that's drawn there. Only 90/270 are meaningful
         # here since those are the rotations that swap width and height to
         # match PHYSICAL_SIZE <-> SCREEN_SIZE.
+        #
+        # Always returns ints: FINGERDOWN/FINGERUP coordinates arrive as
+        # normalized 0..1 floats (see main.py), which would otherwise
+        # propagate into ui.py's row-index math and break list indexing.
         lw, lh = config.SCREEN_SIZE
         rotate = config.SCREEN_ROTATE % 360  # Python's % is always non-negative here
         if rotate == 90:
-            return (lw - py, px)
+            x, y = lw - py, px
         elif rotate == 270:
-            return (py, lh - px)
-        return (px, py)
+            x, y = py, lh - px
+        else:
+            x, y = px, py
+        return (round(x), round(y))
 
     def close(self):
         pygame.quit()

@@ -13,10 +13,11 @@ HOP_INTERVAL_SEC = 0.5      # how long to sit on each channel while scanning
 # SCREEN_SIZE is what ui.py actually draws to.
 PHYSICAL_SIZE = (800, 480)
 SCREEN_SIZE = (480, 800)
-SCREEN_ROTATE = 90          # degrees (pygame.transform.rotate convention).
-                             # If the picture comes up sideways or upside
-                             # down on first boot, change this to 270 (or
-                             # -90) - touch coordinates follow automatically
+SCREEN_ROTATE = 270         # degrees (pygame.transform.rotate convention).
+                             # 90 and 270 are the two valid values (they're
+                             # exactly 180 degrees apart) - if the picture
+                             # is upside-down, flip this between them.
+                             # Touch coordinates follow automatically
                              # since display.py derives the inverse from
                              # this same value.
 
