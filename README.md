@@ -1,52 +1,40 @@
-# WiFi Hunter — Pi 3B + Alfa AWUS036ACH + Adafruit 2.8" Resistive PiTFT
+# WiFi Hunter — Pi 3B+ + Alfa AWUS036ACH + Hosyond 7" DSI Touchscreen
 
-No GPS yet — this build tracks SSIDs/BSSIDs/vendors and shows a live list +
-detail screen on the touchscreen. Direction-finding compass math from the
-earlier prototype can be added as a second screen once this base is working.
+Tracks SSIDs/BSSIDs/vendors and shows a live list + detail screen, driven
+entirely by touch. Direction-finding compass math from the earlier
+prototype can be added as a second screen once this base is working.
+
+This build replaced an earlier Adafruit 2.8" resistive PiTFT (broken touch
+controller, SPI framebuffer, 4 physical buttons) with a 7" DSI capacitive
+touchscreen. The DSI panel is a real DRM/KMS display, so the app draws
+through a normal SDL window instead of writing raw pixels into a
+framebuffer device, and navigation is touch-only.
 
 ## 1. Flash the OS
 
-Use **Raspberry Pi OS Lite (32-bit / Bullseye or Bookworm)** — Lite because
-you don't need a desktop, you're driving the framebuffer directly. Enable
-SSH during imaging (Raspberry Pi Imager's gear icon) so you can work headless.
+**Raspberry Pi OS Lite (32-bit, Bookworm)**. Enable SSH during imaging
+(Raspberry Pi Imager's gear icon) so you can work headless.
 
-## 2. Enable SPI
+## 2. Enable the DSI display
 
+The Hosyond panel is DSI/driver-free — Raspberry Pi OS's mainline `vc4-kms-v3d`
+driver handles it directly, no vendor install script needed. In
+`/boot/firmware/config.txt`, make sure:
 ```
-sudo raspi-config
-# Interface Options -> SPI -> Enable -> reboot
+dtoverlay=vc4-kms-v3d
 ```
+is **enabled** (uncommented). (The old PiTFT setup needed this commented
+*out* to avoid conflicting with the SPI framebuffer console — that
+conflict doesn't apply here since there's no SPI framebuffer anymore.)
+Reboot after changing it.
 
-## 3. Install the Adafruit PiTFT resistive driver
+If the picture comes up sideways or upside-down (the app draws portrait
+and rotates it onto the panel's native landscape resolution in software —
+see `display.py`), change `SCREEN_ROTATE` in `config.py` from `90` to
+`270` (or vice versa). Touch coordinates follow automatically since
+`display.py` derives the inverse mapping from that same value.
 
-```
-sudo apt update && sudo apt install -y git python3-pip
-cd ~
-git clone https://github.com/adafruit/Raspberry-Pi-Installer-Scripts.git
-cd Raspberry-Pi-Installer-Scripts
-sudo python3 adafruit-pitft.py --display=28r --rotation=90 --install-type=fbcp
-```
-(`28r` = 2.8" resistive. Adafruit's script asks a couple of interactive
-questions — choose "console" = no if you don't want a text console on the
-screen, since our app will own the display directly.) Reboot when it finishes.
-
-This gives you `/dev/fb1` (the TFT) and a touch input device.
-
-## 4. Test the onboard buttons (no touch/tslib needed)
-
-Navigation uses the PiTFT's 4 built-in tactile buttons instead of touch —
-they're wired to GPIO 17/22/23/27, no driver or calibration required, just
-read directly via `gpiozero`:
-
-```
-python3 buttons.py
-```
-Press each button and confirm the right label (UP/DOWN/SELECT/BACK) prints.
-If a button prints the wrong label, or does nothing, physically check which
-button is on which GPIO for your specific board and adjust the `PIN_*`
-constants at the top of `buttons.py` to match.
-
-## 5. Alfa AWUS036ACH driver
+## 3. Alfa AWUS036ACH driver
 
 Check which chipset your unit actually shipped with:
 ```
@@ -74,7 +62,7 @@ Update `IFACE` in `config.py` to match (e.g. `wlan1`, not `wlan1mon` unless
 your setup renames it — `iw`-based monitor mode keeps the same name, only
 `airmon-ng` renames to `wlan1mon`).
 
-## 6. Project setup
+## 4. Project setup
 
 Copy this whole folder to the Pi, then:
 ```
@@ -83,10 +71,23 @@ python3 -m venv venv --system-site-packages
 source venv/bin/activate
 pip install -r requirements.txt
 ```
-`--system-site-packages` matters — pygame's SDL framebuffer/tslib integration
-is easiest to get working using the apt-installed SDL libs rather than pip's.
+`--system-site-packages` matters — pygame's SDL integration is easiest to
+get working using the apt-installed SDL libs rather than pip's.
 
-## 7. Run it
+## 5. Hide specific SSIDs (optional)
+
+Copy `.env.example` to `.env` and list SSIDs you don't want shown:
+```
+cp .env.example .env
+```
+Edit `.env`:
+```
+HIDDEN_SSIDS=MyHomeNetwork,MyOtherNetwork
+```
+`.env` is gitignored so it stays local. Tap the small icon in the top-right
+of the list screen's header to toggle hide mode on/off.
+
+## 6. Run it
 
 The easiest way — one script sets the adapter to monitor mode and launches
 the app:
@@ -105,20 +106,12 @@ sudo iw dev wlan1 set type monitor
 sudo ip link set wlan1 up
 sudo -E venv/bin/python3 main.py
 ```
-No `SDL_FBDEV`/`SDL_VIDEODRIVER` needed — the app draws to an in-memory
-surface and writes pixels directly into `/dev/fb1` itself (see
-`fb_output.py`), bypassing SDL's display drivers entirely. This was
-necessary because current SDL2/pygame builds don't reliably support
-`fbcon` (deprecated) or `kmsdrm` (wrong driver type for a plain SPI
-framebuffer like this one) on this hardware.
 
-`sudo` is still required for monitor-mode packet capture, channel
-hopping, and GPIO button access.
+`sudo` is required for monitor-mode packet capture and channel hopping.
 
-### Quick isolated tests, if something looks wrong later
+### Quick isolated test, if the screen looks wrong later
 ```
-sudo -E venv/bin/python3 fb_output.py    # cycles red/green/blue on the screen
-python3 buttons.py                        # press each button, confirm labels
+sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
 ```
 
 ## What's included
@@ -128,30 +121,31 @@ python3 buttons.py                        # press each button, confirm labels
 - `oui.py` — offline MAC vendor lookup using a bundled Wireshark-format
   `manuf.raw` (snapshot included; refresh anytime from Wireshark's repo for
   newer vendor allocations)
-- `buttons.py` — reads the PiTFT's 4 onboard tactile buttons via GPIO
-- `fb_output.py` — packs pygame surface pixels into 16-bit RGB565 and
-  writes them directly into `/dev/fb1`, bypassing SDL's display drivers
-- `ui.py` / `main.py` — three screens navigated with UP/DOWN/SELECT/BACK:
-  - **List**: cursor + UP/DOWN scroll, SELECT opens a network's detail
-  - **Detail**: SSID/BSSID/vendor/band/RSSI, SELECT starts tracking,
-    BACK returns to the list
+- `display.py` — opens the DSI panel as a normal SDL window and rotates
+  the app's portrait UI onto its native landscape resolution each frame,
+  converting touch coordinates back the other way
+- `ui.py` / `main.py` — three screens, navigated entirely by touch:
+  - **List**: tap a row to open its detail screen, swipe up/down to
+    scroll, tap the small icon top-right to toggle SSID hide mode
+  - **Detail**: SSID/BSSID/vendor/band/RSSI; tap **TRACK** to start
+    tracking, **BACK** to return to the list
   - **Tracking**: locks the channel hopper onto that one BSSID's channel
     (so you get frequent, uninterrupted readings instead of a hop-diluted
     one), shows a big live RSSI number, a peak-hold marker, a bar meter,
-    and a recent-history trend graph. BACK stops tracking (resumes normal
-    hopping) and returns to detail.
+    and a recent-history trend graph. Tap **STOP** to resume normal
+    hopping and return to detail.
 
 ### Using the tracking screen to hunt down a signal
 
-Point your directional antenna, walk the cursor to the target SSID, SELECT
-into detail, SELECT again to start tracking. Then slowly rotate/walk with
-the antenna and watch the big RSSI number and the peak-hold line (yellow)
-on the bar — RSSI gets less negative (closer to 0) as you point toward or
-move closer to the source. This is the same "hotter/colder" method used in
-classic radio direction finding, just without a magnetometer for an actual
-compass bearing yet — GPS/magnetometer-based bearing estimation can be
-added on top of this later using the same technique from the interactive
-compass prototype earlier in this build.
+Point your directional antenna, tap the target SSID to open its detail
+screen, tap TRACK. Then slowly rotate/walk with the antenna and watch the
+big RSSI number and the peak-hold line (yellow) on the bar — RSSI gets
+less negative (closer to 0) as you point toward or move closer to the
+source. This is the same "hotter/colder" method used in classic radio
+direction finding, just without a magnetometer for an actual compass
+bearing yet — GPS/magnetometer-based bearing estimation can be added on
+top of this later using the same technique from the interactive compass
+prototype earlier in this build.
 
 ## Known rough edges to expect
 
@@ -163,3 +157,7 @@ compass prototype earlier in this build.
   a target BSSID, so RSSI readings aren't interrupted by the hop
 - RSSI on some Realtek monitor-mode drivers is less reliable than on `mt76`
   chips — validate against `airodump-ng` on the same adapter if numbers look off
+- `main.py` handles both `MOUSEBUTTONDOWN/UP` and `FINGERDOWN/UP` events
+  since it's untested which one SDL emits for this panel's touch driver —
+  if taps don't register at all, check which event type actually fires
+  (add a quick `print(event)` in the loop) and let me know

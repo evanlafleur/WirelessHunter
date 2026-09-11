@@ -7,10 +7,18 @@ GONE_AFTER_SEC = 180        # mark an AP "gone" if not seen in this many seconds
 CHANNELS_24 = [1, 6, 11]              # quick-hop set for 2.4GHz (expand as needed)
 CHANNELS_5 = [36, 40, 44, 48, 149, 153, 157, 161]  # common 5GHz channels (region-dependent)
 HOP_INTERVAL_SEC = 0.5      # how long to sit on each channel while scanning
-SCREEN_SIZE = (240, 320)    # PiTFT 2.8" resolution, portrait (buttons at bottom)
-FRAMEBUFFER = "/dev/fb1"    # the PiTFT's framebuffer device after driver install
-
-HIDE_MODE_HOLD_SEC = 3.0    # hold UP+DOWN together this long to toggle hide mode
+# Hosyond 7" DSI touchscreen - native resolution is landscape, but the UI
+# is drawn portrait and rotated onto the physical panel each frame (see
+# display.py). PHYSICAL_SIZE is what pygame.display.set_mode() opens;
+# SCREEN_SIZE is what ui.py actually draws to.
+PHYSICAL_SIZE = (800, 480)
+SCREEN_SIZE = (480, 800)
+SCREEN_ROTATE = 90          # degrees (pygame.transform.rotate convention).
+                             # If the picture comes up sideways or upside
+                             # down on first boot, change this to 270 (or
+                             # -90) - touch coordinates follow automatically
+                             # since display.py derives the inverse from
+                             # this same value.
 
 def _load_hidden_ssids(path=".env"):
     # Minimal .env parser (avoids adding python-dotenv for one key).
