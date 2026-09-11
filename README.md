@@ -1,8 +1,9 @@
 # WiFi Hunter — Pi 3B+ + Alfa AWUS036ACH + Hosyond 7" DSI Touchscreen
 
-Tracks SSIDs/BSSIDs/vendors and shows a live list + detail screen, driven
-entirely by touch. Direction-finding compass math from the earlier
-prototype can be added as a second screen once this base is working.
+Launches into a phone-style home screen with app icons. Currently:
+**WiFi Scanner** (tracks SSIDs/BSSIDs/vendors, live list + detail +
+direction-finding tracking screen) and **Settings** (placeholder for now).
+More apps - and actual settings - get added the same way later.
 
 This build replaced an earlier Adafruit 2.8" resistive PiTFT (broken touch
 controller, SPI framebuffer, 4 physical buttons) with a 7" DSI capacitive
@@ -30,9 +31,10 @@ Reboot after changing it.
 
 If the picture comes up sideways or upside-down (the app draws portrait
 and rotates it onto the panel's native landscape resolution in software —
-see `display.py`), change `SCREEN_ROTATE` in `config.py` from `90` to
-`270` (or vice versa). Touch coordinates follow automatically since
-`display.py` derives the inverse mapping from that same value.
+see `display.py`), change `SCREEN_ROTATE` in `config.py` between `90` and
+`270` (they're 180 degrees apart, so that's the whole adjustment range).
+Touch coordinates follow automatically since `display.py` derives the
+inverse mapping from that same value.
 
 ## 3. Alfa AWUS036ACH driver
 
@@ -84,8 +86,9 @@ Edit `.env`:
 ```
 HIDDEN_SSIDS=MyHomeNetwork,MyOtherNetwork
 ```
-`.env` is gitignored so it stays local. Tap the small icon in the top-right
-of the list screen's header to toggle hide mode on/off.
+`.env` is gitignored so it stays local. In the WiFi Scanner app, tap the
+small icon in the top-right of the list screen's header to toggle hide
+mode on/off.
 
 ## 6. Run it
 
@@ -116,6 +119,30 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
 
 ## What's included
 
+- `main.py` — entry point; owns which "app" is currently showing (`home`,
+  `wifi`, `settings`, ...) and routes touch/draw calls to it. Every app is
+  created once at startup and stays alive in the background (so e.g. the
+  WiFi scanner's scroll position survives a trip back to the launcher);
+  the sniffer keeps capturing regardless of which app is on screen
+- `launcher.py` — the home screen: a grid of app icons, tap one to launch
+  it. Add an entry to `launcher.py`'s `APPS` list (and wire it up in
+  `main.py`) to add a new app
+- `theme.py` — shared colors and touch-target sizing used by every app,
+  so they look consistent
+- `ui.py` — the **WiFi Scanner** app, three screens navigated entirely by
+  touch:
+  - **List**: tap a row to open its detail screen, swipe up/down to
+    scroll, tap the icon top-left to return to the launcher, tap the
+    icon top-right to toggle SSID hide mode
+  - **Detail**: SSID/BSSID/vendor/band/RSSI; tap **TRACK** to start
+    tracking, **BACK** to return to the list
+  - **Tracking**: locks the channel hopper onto that one BSSID's channel
+    (so you get frequent, uninterrupted readings instead of a hop-diluted
+    one), shows a big live RSSI number, a peak-hold marker, a bar meter,
+    and a recent-history trend graph. Tap **STOP** to resume normal
+    hopping and return to detail.
+- `settings_app.py` — the **Settings** app; currently just a placeholder
+  screen with a HOME button. Actual settings get added here later
 - `sniffer.py` — Scapy-based beacon/probe-response capture, hops across a
   channel list covering both 2.4G and 5G, tracks last-seen time per BSSID
 - `oui.py` — offline MAC vendor lookup using a bundled Wireshark-format
@@ -124,16 +151,6 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
 - `display.py` — opens the DSI panel as a normal SDL window and rotates
   the app's portrait UI onto its native landscape resolution each frame,
   converting touch coordinates back the other way
-- `ui.py` / `main.py` — three screens, navigated entirely by touch:
-  - **List**: tap a row to open its detail screen, swipe up/down to
-    scroll, tap the small icon top-right to toggle SSID hide mode
-  - **Detail**: SSID/BSSID/vendor/band/RSSI; tap **TRACK** to start
-    tracking, **BACK** to return to the list
-  - **Tracking**: locks the channel hopper onto that one BSSID's channel
-    (so you get frequent, uninterrupted readings instead of a hop-diluted
-    one), shows a big live RSSI number, a peak-hold marker, a bar meter,
-    and a recent-history trend graph. Tap **STOP** to resume normal
-    hopping and return to detail.
 
 ### Using the tracking screen to hunt down a signal
 

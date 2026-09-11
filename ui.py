@@ -1,32 +1,21 @@
 # --- ui.py ---
-# Renders the AP list onto an in-memory surface (see display.py, which
-# rotates this portrait surface onto the physical landscape panel and
-# converts touch coordinates back into this surface's coordinate space).
-# Navigation is entirely touch-driven: tap a row to open it, tap the two
-# big buttons at the bottom of detail/tracking screens, swipe the list to
-# scroll, tap the small icon in the header to toggle hide mode.
+# The "WiFi Device Scanner" app. Renders onto an in-memory surface (see
+# display.py, which rotates this portrait surface onto the physical
+# landscape panel and converts touch coordinates back into this surface's
+# coordinate space). Navigation is entirely touch-driven: tap a row to
+# open it, tap the two big buttons at the bottom of detail/tracking
+# screens, swipe the list to scroll, tap the small icons in the header to
+# toggle hide mode or return to the launcher (see launcher.py).
 # Run main.py, don't run this file directly.
 
 import pygame
 import config
-
-BLACK = (10, 10, 10)
-WHITE = (230, 230, 230)
-GRAY = (120, 120, 120)
-GREEN = (60, 200, 100)
-YELLOW = (220, 200, 60)
-DIM = (70, 70, 70)
-RED = (200, 80, 60)
-BTN_BACK = (90, 90, 90)
+from theme import BLACK, WHITE, GRAY, GREEN, YELLOW, DIM, RED, BTN_BACK, HEADER_H, FOOTER_H, ICON_SIZE, TAP_SLOP
 
 ROW_H = 84
-HEADER_H = 60
-FOOTER_H = 96
-ICON_SIZE = 44
-TAP_SLOP = 18  # max finger movement (px) for a touch to still count as a tap
 
 class UI:
-    def __init__(self, on_track_start=None, on_track_stop=None):
+    def __init__(self, on_track_start=None, on_track_stop=None, on_home=None):
         pygame.init()
         self.screen = pygame.Surface(config.SCREEN_SIZE)
         self.font = pygame.font.SysFont("dejavusansmono", 22)
@@ -39,6 +28,7 @@ class UI:
         self.hide_mode = False  # filters out config.HIDDEN_SSIDS when True
         self.on_track_start = on_track_start   # callback(channel)
         self.on_track_stop = on_track_stop     # callback()
+        self.on_home = on_home                 # callback(), list screen only
         self._touch_start = None
 
     def toggle_hide_mode(self):
@@ -57,6 +47,9 @@ class UI:
     def _hide_icon_rect(self):
         w = config.SCREEN_SIZE[0]
         return pygame.Rect(w - ICON_SIZE - 14, (HEADER_H - ICON_SIZE) // 2, ICON_SIZE, ICON_SIZE)
+
+    def _home_icon_rect(self):
+        return pygame.Rect(14, (HEADER_H - ICON_SIZE) // 2, ICON_SIZE, ICON_SIZE)
 
     # --- touch handling ---
     def touch_down(self, x, y):
@@ -89,6 +82,10 @@ class UI:
 
     def _tap_list(self, x, y, networks):
         h = config.SCREEN_SIZE[1]
+        if self._home_icon_rect().collidepoint(x, y):
+            if self.on_home:
+                self.on_home()
+            return
         if self._hide_icon_rect().collidepoint(x, y):
             self.toggle_hide_mode()
             return
@@ -132,6 +129,12 @@ class UI:
         # no display.flip() here - main.py pushes self.screen through
         # display.py after calling this.
 
+    def _draw_home_glyph(self, rect):
+        cx, cy = rect.center
+        roof = [(cx - 12, cy - 2), (cx, cy - 14), (cx + 12, cy - 2)]
+        pygame.draw.polygon(self.screen, GRAY, roof)
+        pygame.draw.rect(self.screen, GRAY, (cx - 8, cy - 2, 16, 14))
+
     def _draw_button_bar(self, buttons):
         # buttons: list of (label, color), drawn as equal-width tappable
         # segments spanning the footer.
@@ -147,11 +150,16 @@ class UI:
 
     def _draw_list(self, networks):
         w, h = config.SCREEN_SIZE
+
+        home_rect = self._home_icon_rect()
+        pygame.draw.circle(self.screen, GRAY, home_rect.center, ICON_SIZE // 2, width=3)
+        self._draw_home_glyph(home_rect)
+
         hdr_text = f"Networks: {len(networks)}"
         if self.hide_mode:
             hdr_text += "  [HIDE]"
         hdr = self.font.render(hdr_text, True, YELLOW if self.hide_mode else WHITE)
-        self.screen.blit(hdr, (14, (HEADER_H - hdr.get_height()) // 2))
+        self.screen.blit(hdr, (home_rect.right + 12, (HEADER_H - hdr.get_height()) // 2))
 
         icon_rect = self._hide_icon_rect()
         icon_color = YELLOW if self.hide_mode else GRAY
