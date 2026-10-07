@@ -113,6 +113,23 @@ sudo -E venv/bin/python3 main.py
 
 `sudo` is required for monitor-mode packet capture and channel hopping.
 
+### Start automatically on boot
+
+`wifi-hunter.service` is a systemd unit that runs `start.sh` at boot (it
+waits for the Alfa adapter to show up first, and restarts the app if it
+crashes). It assumes the repo lives at `/home/ncdc/WirelessHunter` — edit
+the paths in the file if yours differs. Install it once:
+```
+chmod +x start.sh
+sudo cp wifi-hunter.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now wifi-hunter
+```
+Then check on it with `systemctl status wifi-hunter` or watch live output
+with `journalctl -u wifi-hunter -f`. To stop it temporarily (e.g. to run
+`start.sh` by hand while debugging): `sudo systemctl stop wifi-hunter`; to
+turn autostart off: `sudo systemctl disable wifi-hunter`.
+
 ### Quick isolated test, if the screen looks wrong later
 ```
 sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
