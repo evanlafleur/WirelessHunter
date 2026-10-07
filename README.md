@@ -115,6 +115,17 @@ sudo -E venv/bin/python3 main.py
 
 ### Start automatically on boot
 
+First, stop NetworkManager from taking `wlan1` back out of monitor mode
+(on Bookworm it grabs new wifi adapters as they come up, which silently
+undoes `start.sh` and leaves the network list empty):
+```
+sudo tee /etc/NetworkManager/conf.d/99-wlan1-unmanaged.conf <<'EOF'
+[keyfile]
+unmanaged-devices=interface-name:wlan1
+EOF
+sudo systemctl restart NetworkManager
+```
+
 `wifi-hunter.service` is a systemd unit that runs `start.sh` at boot (it
 waits for the Alfa adapter to show up first, and restarts the app if it
 crashes). It assumes the repo lives at `/home/ncdc/WirelessHunter` — edit
