@@ -6,7 +6,7 @@
 
 import pygame
 import config
-from theme import BLACK, WHITE, GRAY, TAP_SLOP
+from theme import BLACK, WHITE, TAP_SLOP
 
 ICON_SIZE = 120
 COL_GAP = 30

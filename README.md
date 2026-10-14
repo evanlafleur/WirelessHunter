@@ -3,8 +3,9 @@
 Launches into a phone-style home screen with app icons. Currently:
 **WiFi Scanner** (tracks SSIDs/BSSIDs/vendors, live list + detail +
 direction-finding tracking screen), **Radar** (manual-sweep polar RSSI
-plot - no magnetometer needed, see below), and **Settings** (shutdown/
-reboot for now, more settings later). More apps get added the same way.
+plot - no magnetometer needed, see below), and **Settings** (Wi-Fi
+connection for updates, SSID whitelist editor, scan-antenna picker,
+shutdown/reboot). More apps get added the same way.
 
 This build replaced an earlier Adafruit 2.8" resistive PiTFT (broken touch
 controller, SPI framebuffer, 4 physical buttons) with a 7" DSI capacitive
@@ -53,17 +54,14 @@ lsusb
 - If it shows a **MediaTek** ID (0e8d:...): you're likely already covered —
   `mt76` is in mainline kernel since ~5.x, no extra driver needed.
 
-Then bring up monitor mode (adjust `wlan1` to whatever `iw dev` shows for
-the Alfa adapter — the Pi's onboard wifi is usually `wlan0`):
-```
-sudo ip link set wlan1 down
-sudo iw dev wlan1 set type monitor
-sudo ip link set wlan1 up
-iw dev   # confirm it now shows "type monitor" and note the interface name
-```
-Update `IFACE` in `config.py` to match (e.g. `wlan1`, not `wlan1mon` unless
-your setup renames it — `iw`-based monitor mode keeps the same name, only
-`airmon-ng` renames to `wlan1mon`).
+You don't need to put the adapter into monitor mode by hand — the app
+does that itself at startup (and again whenever you switch antennas).
+Check what the adapter is called with `iw dev` (the Pi's onboard wifi is
+usually `wlan0`, the Alfa usually `wlan1`). The app scans on `wlan1` by
+default; to use a different interface, pick it on the touchscreen under
+**Settings > Scan Antenna** (saved to `settings.json`, which is
+gitignored). Note `iw`-based monitor mode keeps the interface name, so
+it's `wlan1`, not `wlan1mon` (only `airmon-ng` renames it).
 
 ## 4. Project setup
 
@@ -87,37 +85,32 @@ Edit `.env`:
 ```
 HIDDEN_SSIDS=MyHomeNetwork,MyOtherNetwork
 ```
-`.env` is gitignored so it stays local. In the WiFi Scanner app, tap the
-small icon in the top-right of the list screen's header to toggle hide
-mode on/off.
+`.env` is gitignored so it stays local. You can also edit the list from
+the touchscreen (**Settings > SSID Whitelist**: type a name, pick from
+networks currently in range, or delete entries) - changes are saved back
+to `.env`. In the WiFi Scanner app, tap the small icon in the top-right of
+the list screen's header to toggle hide mode on/off.
 
 ## 6. Run it
 
-The easiest way — one script sets the adapter to monitor mode and launches
-the app:
 ```
 sudo ./start.sh
 ```
-Before first use, open `start.sh` and confirm the `IFACE="wlan1"` line
-matches your Alfa adapter's actual name (check with `iw dev` while it's
-still in managed mode) — and make sure it matches `IFACE` in `config.py`
-too, since that's what the sniffer actually reads from.
-
-Or run the two steps manually if you want more control:
-```
-sudo ip link set wlan1 down
-sudo iw dev wlan1 set type monitor
-sudo ip link set wlan1 up
-sudo -E venv/bin/python3 main.py
-```
+(or `sudo -E venv/bin/python3 main.py` directly - `start.sh` just does
+that from the right directory). The app puts the selected scan antenna
+into monitor mode itself, and starts fine even if the adapter isn't
+plugged in yet: the scanner list shows what it's waiting on, and you can
+pick a different antenna in Settings.
 
 `sudo` is required for monitor-mode packet capture and channel hopping.
 
 ### Start automatically on boot
 
-First, stop NetworkManager from taking `wlan1` back out of monitor mode
-(on Bookworm it grabs new wifi adapters as they come up, which silently
-undoes `start.sh` and leaves the network list empty):
+The app already tells NetworkManager to leave the scan antenna alone
+whenever it enables monitor mode. For extra safety against boot-time
+races (on Bookworm NetworkManager grabs new wifi adapters as they come
+up, which silently undoes monitor mode and leaves the list empty), you
+can also mark `wlan1` unmanaged permanently:
 ```
 sudo tee /etc/NetworkManager/conf.d/99-wlan1-unmanaged.conf <<'EOF'
 [keyfile]
@@ -126,9 +119,8 @@ EOF
 sudo systemctl restart NetworkManager
 ```
 
-`wifi-hunter.service` is a systemd unit that runs `start.sh` at boot (it
-waits for the Alfa adapter to show up first, and restarts the app if it
-crashes). It assumes the repo lives at `/home/ncdc/WirelessHunter` — edit
+`wifi-hunter.service` is a systemd unit that runs `start.sh` at boot
+(after NetworkManager, restarting the app if it crashes). It assumes the repo lives at `/home/ncdc/WirelessHunter` — edit
 the paths in the file if yours differs. Install it once:
 ```
 chmod +x start.sh
@@ -180,12 +172,33 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
   the sensor, syncing the needle to your own rotation. Tap **BACK** to
   stop and pick a different target, **RESET** to clear the sweep and
   start over on the same one
-- `settings_app.py` — the **Settings** app. Currently: **Shut Down** and
-  **Reboot**, each behind a confirm screen (a touchscreen mis-tap
-  shouldn't be able to power the device off). More settings (hidden
-  SSIDs, refresh intervals, etc.) get added here later
-- `widgets.py` — small drawing helpers (currently just the bottom
-  button-bar widget) shared by the WiFi Scanner, Radar, and Settings apps
+- `settings_app.py` — the **Settings** app: a main menu that pushes
+  sub-screens onto a stack. To add a setting, write a `SettingsScreen`
+  (`settings_base.py`) and add a row to the menu:
+  - **Wi-Fi** (`settings_wifi.py`): scan, join, and disconnect networks on
+    the Pi's onboard wifi (`NET_IFACE`, `wlan0`) via NetworkManager, for
+    updates and the like. Tap a network; secured ones open the on-screen
+    keyboard for the password, saved ones reconnect directly (and ask for
+    a new password if the saved one fails). Unavailable while `wlan0` is
+    itself the scanning antenna
+  - **SSID Whitelist** (`settings_whitelist.py`): edit the list hidden in
+    hide mode - type a name, pick from networks currently in range, or
+    delete; saved to `.env`
+  - **Scan Antenna** (`settings_antenna.py`): choose which wireless
+    interface scans. Switching puts the new one in monitor mode, tells
+    NetworkManager to leave it alone, hands the old one back to
+    NetworkManager, restarts the capture, and rolls back to the old
+    antenna if the switch fails. Saved to `settings.json`
+  - **Shut Down** / **Reboot**, each behind a confirm screen (a
+    touchscreen mis-tap shouldn't be able to power the device off)
+- `keyboard.py` — the on-screen keyboard (letters, shift, numbers,
+  symbols, show/hide for passwords) used for Wi-Fi passwords and typed
+  SSIDs, since there's no physical keyboard
+- `system.py` — wrappers around `nmcli` / `iw` / `ip` (all run as argv
+  lists, never through a shell, so typed SSIDs/passwords can't inject
+  commands) plus `BackgroundTask`, which runs slow calls off the UI thread
+- `widgets.py` — shared drawing/layout helpers (bottom button bar,
+  scrollable-list math, text truncation) used by every app
 - `sniffer.py` — Scapy-based beacon/probe-response capture, hops across a
   channel list covering both 2.4G and 5G, tracks last-seen time per BSSID
 - `oui.py` — offline MAC vendor lookup using a bundled Wireshark-format
@@ -222,6 +235,16 @@ prototype earlier in this build.
   it's untested which ones SDL emits for this panel's touch driver — if
   taps or the radar needle don't register, check which event type
   actually fires (add a quick `print(event)` in the loop) and let me know
+- The onboard `wlan0` (Broadcom) generally can't do monitor mode with the
+  stock firmware, so picking it as the scan antenna will usually just
+  fail - the app rolls back to the previous antenna and shows the error.
+  Wi-Fi connection and scanning on separate radios (`wlan0` + the Alfa) is
+  the intended setup
+- Wi-Fi passwords are passed to `nmcli` as an argument, so they're briefly
+  visible in the process list on the Pi while connecting. Fine for a
+  single-user device; don't use this scheme on a shared machine
+- SSIDs containing commas can't be whitelisted (the `.env` format is
+  comma-separated)
 - The Alfa adapter can only sit on one channel at a time. WiFi Scanner's
   Tracking screen and Radar's sweep both lock the channel while active -
   if you start one while the other is also active, whichever locks/

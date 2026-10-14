@@ -1,7 +1,37 @@
 # --- config.py ---
+import json
 import os
+import re
 
-IFACE = "wlan1"             # your Alfa adapter in monitor mode (check with `iw dev`)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(BASE_DIR, ".env")                # HIDDEN_SSIDS (gitignored)
+SETTINGS_PATH = os.path.join(BASE_DIR, "settings.json")  # values changed from the Settings app (gitignored)
+
+def _load_settings():
+    try:
+        with open(SETTINGS_PATH) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+_settings = _load_settings()
+
+def save_setting(key, value):
+    _settings[key] = value
+    tmp = SETTINGS_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(_settings, f, indent=2)
+    os.replace(tmp, SETTINGS_PATH)
+
+def _load_scan_iface():
+    name = _settings.get("scan_iface", "wlan1")
+    # interface names end up in shell-free argv lists and `iw` commands;
+    # reject anything that doesn't look like one
+    return name if isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", name) else "wlan1"
+
+IFACE = _load_scan_iface()  # the scanning antenna (change it in Settings > Scan Antenna)
+NET_IFACE = "wlan0"         # onboard Pi wifi, used for internet (Settings > Wi-Fi)
 MANUF_FILE = "manuf.raw"    # OUI vendor database shipped alongside this project
 GONE_AFTER_SEC = 180        # mark an AP "gone" if not seen in this many seconds
 CHANNELS_24 = [1, 6, 11]              # quick-hop set for 2.4GHz (expand as needed)
@@ -24,7 +54,7 @@ SCREEN_ROTATE = 270         # degrees (pygame.transform.rotate convention).
                              # since display.py derives the inverse from
                              # this same value.
 
-def _load_hidden_ssids(path=".env"):
+def _load_hidden_ssids(path=ENV_PATH):
     # Minimal .env parser (avoids adding python-dotenv for one key).
     # Looks for a single HIDDEN_SSIDS=name1,name2 line.
     hidden = set()
@@ -39,4 +69,28 @@ def _load_hidden_ssids(path=".env"):
                     hidden.update(v.strip() for v in value.split(",") if v.strip())
     return hidden
 
+# Mutated in place by the Settings app, so everything holding a reference
+# to config.HIDDEN_SSIDS sees edits immediately.
 HIDDEN_SSIDS = _load_hidden_ssids()
+
+def save_hidden_ssids(path=None):
+    """Writes HIDDEN_SSIDS back to .env, leaving any other lines alone."""
+    path = path or ENV_PATH
+    new_line = "HIDDEN_SSIDS=" + ",".join(sorted(HIDDEN_SSIDS, key=str.lower))
+    out, replaced = [], False
+    if os.path.exists(path):
+        with open(path) as f:
+            for raw in f.read().splitlines():
+                is_entry = (not raw.lstrip().startswith("#")
+                            and raw.partition("=")[0].strip() == "HIDDEN_SSIDS")
+                if not is_entry:
+                    out.append(raw)
+                elif not replaced:
+                    out.append(new_line)
+                    replaced = True
+    if not replaced:
+        out.append(new_line)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(out) + "\n")
+    os.replace(tmp, path)

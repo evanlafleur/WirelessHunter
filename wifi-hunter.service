@@ -5,9 +5,6 @@ After=multi-user.target NetworkManager.service
 [Service]
 Type=simple
 WorkingDirectory=/home/ncdc/WirelessHunter
-# The USB adapter can enumerate a few seconds after boot - wait for it
-# before start.sh tries to put it in monitor mode.
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do ip link show wlan1 >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1'
 ExecStart=/home/ncdc/WirelessHunter/start.sh
 Restart=on-failure
 RestartSec=5

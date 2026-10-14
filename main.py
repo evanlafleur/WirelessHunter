@@ -49,7 +49,7 @@ def main():
         on_lock_channel=lambda channel: tracker.lock_channel(channel),
         on_unlock_channel=lambda: tracker.unlock_channel(),
     )
-    settings_app = SettingsApp(on_home=go_home)
+    settings_app = SettingsApp(on_home=go_home, tracker=tracker)
     display = Display()
 
     clock = pygame.time.Clock()
@@ -152,6 +152,8 @@ def main():
                         settings_app.touch_down(lx, ly)
                     else:
                         settings_app.touch_up(lx, ly)
+
+            wifi_ui.status_text = tracker.status
 
             if current_app == "home":
                 launcher.draw()

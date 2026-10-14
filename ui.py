@@ -8,6 +8,8 @@
 # toggle hide mode or return to the launcher (see launcher.py).
 # Run main.py, don't run this file directly.
 
+import textwrap
+
 import pygame
 import config
 from theme import BLACK, WHITE, GRAY, GREEN, YELLOW, DIM, RED, BTN_BACK, HEADER_H, FOOTER_H, ICON_SIZE, TAP_SLOP
@@ -30,6 +32,7 @@ class UI:
         self.on_track_start = on_track_start   # callback(channel)
         self.on_track_stop = on_track_stop     # callback()
         self.on_home = on_home                 # callback(), list screen only
+        self.status_text = ""                  # capture status, shown while the list is empty
         self._touch_start = None
 
     def toggle_hide_mode(self):
@@ -168,6 +171,11 @@ class UI:
             self.screen.blit(self.font.render(line1, True, color), (14, y + 10))
             self.screen.blit(self.font_small.render(line2, True, GRAY), (14, y + 42))
             y += ROW_H
+
+        if not networks and self.status_text:
+            for i, line in enumerate(textwrap.wrap(self.status_text, 34)[:4]):
+                text = self.font_small.render(line, True, GRAY)
+                self.screen.blit(text, (w // 2 - text.get_width() // 2, HEADER_H + 80 + i * 26))
 
         hint = self.font_small.render("swipe to scroll  ·  tap to open", True, GRAY)
         self.screen.blit(hint, (w // 2 - hint.get_width() // 2,

@@ -6,9 +6,10 @@ import os
 import time
 import threading
 from collections import deque
-from scapy.all import sniff, Dot11, Dot11Beacon, Dot11ProbeResp, Dot11Elt, RadioTap
+from scapy.all import AsyncSniffer, Dot11, Dot11Beacon, Dot11ProbeResp, Dot11Elt, RadioTap
 
 import config
+import system
 from oui import OuiLookup
 
 HISTORY_LEN = 40   # ~ last 40 readings for the tracking screen's mini-graph
@@ -22,6 +23,10 @@ class Tracker:
         self.history = {}    # bssid -> deque of recent rssi readings
         self._stop = False
         self._locked_channel = None   # set to a channel number to stop hopping
+        self.status = "starting..."   # shown on the list screen while it's empty
+        self._sniffer = None          # scapy AsyncSniffer, None when not capturing
+        self._ctl_lock = threading.Lock()   # serializes start/switch of capture
+        self._hop_paused = False
 
     def lock_channel(self, channel):
         """Stop hopping and sit on one channel - use while tracking a target."""
@@ -38,6 +43,9 @@ class Tracker:
                        [(c, "5G") for c in config.CHANNELS_5]
         i = 0
         while not self._stop:
+            if self._sniffer is None or self._hop_paused:
+                time.sleep(0.2)
+                continue
             if self._locked_channel is not None:
                 # stay put; just re-assert the channel occasionally in case
                 # the driver drifts, then sleep without advancing the hop index
@@ -104,16 +112,83 @@ class Tracker:
             hist = self.history.get(bssid)
             return list(hist) if hist else []
 
+    # ---- capture lifecycle ----
     def start(self):
         threading.Thread(target=self._hop_channels, daemon=True).start()
-        threading.Thread(
-            target=lambda: sniff(iface=self.iface, prn=self._handle, store=False,
-                                  stop_filter=lambda p: self._stop),
-            daemon=True,
-        ).start()
+        threading.Thread(target=self._initial_capture, daemon=True).start()
+
+    def _initial_capture(self):
+        # Runs off the main thread so the UI comes up immediately even if
+        # the adapter is slow to appear (or missing - Settings > Scan
+        # Antenna can then pick a different one).
+        with self._ctl_lock:
+            iface = self.iface
+            self.status = f"waiting for {iface}..."
+            if not system.wait_for_interface(iface, 60):
+                self.status = f"{iface} not found - pick another in Settings > Scan Antenna"
+                return
+            self.status = f"enabling monitor mode on {iface}..."
+            ok, err = system.enable_monitor(iface)
+            if not ok:
+                self.status = f"monitor mode failed on {iface}: {err}"
+                return
+            self._begin_capture(iface)
+
+    def _begin_capture(self, iface):
+        """Starts sniffing on an interface that's already in monitor mode.
+        Returns True on success; sets self.status either way."""
+        sniffer = AsyncSniffer(iface=iface, prn=self._handle, store=False)
+        sniffer.start()
+        time.sleep(1.0)  # give it a moment to open the socket (or fail)
+        exc = getattr(sniffer, "exception", None)
+        if exc is not None or not getattr(sniffer, "running", True):
+            self.status = f"capture failed on {iface}: {exc or 'sniffer did not start'}"
+            return False
+        self._sniffer = sniffer
+        self.status = f"capturing on {iface} - waiting for beacons..."
+        return True
+
+    def _stop_capture(self):
+        sniffer, self._sniffer = self._sniffer, None
+        if sniffer is not None:
+            try:
+                if getattr(sniffer, "running", False):
+                    sniffer.stop()
+            except Exception:
+                pass
+
+    def switch_interface(self, new_iface):
+        """Moves scanning to a different antenna. Blocking (several seconds) -
+        run it from a BackgroundTask. Returns (ok, error_message). On
+        failure the old antenna keeps scanning."""
+        with self._ctl_lock:
+            old = self.iface
+            if new_iface == old and self._sniffer is not None:
+                return True, ""
+            self._hop_paused = True
+            try:
+                self._stop_capture()
+                self._locked_channel = None
+                ok, err = system.enable_monitor(new_iface)
+                if not ok:
+                    # old antenna is still in monitor mode - just resume it
+                    self._begin_capture(old)
+                    return False, err
+                if old != new_iface:
+                    system.restore_managed(old)
+                with self.lock:
+                    self.networks.clear()
+                    self.history.clear()
+                self.iface = new_iface
+                if not self._begin_capture(new_iface):
+                    return False, self.status
+                return True, ""
+            finally:
+                self._hop_paused = False
 
     def stop(self):
         self._stop = True
+        self._stop_capture()
 
     def snapshot(self):
         """Returns a list of network dicts with a computed 'alive' flag."""
