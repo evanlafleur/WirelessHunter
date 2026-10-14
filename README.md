@@ -88,8 +88,8 @@ HIDDEN_SSIDS=MyHomeNetwork,MyOtherNetwork
 `.env` is gitignored so it stays local. You can also edit the list from
 the touchscreen (**Settings > SSID Whitelist**: type a name, pick from
 networks currently in range, or delete entries) - changes are saved back
-to `.env`. In the WiFi Scanner app, tap the small icon in the top-right of
-the list screen's header to toggle hide mode on/off.
+to `.env`. In the WiFi Scanner app, flip the **Hide** switch in the top-right
+of the network list to turn hide mode on/off.
 
 Hide mode removes the whole access point, not just rows carrying the
 whitelisted name: a router also broadcasts nameless "(hidden)" twins whose
@@ -153,23 +153,31 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
   created once at startup and stays alive in the background (so e.g. the
   WiFi scanner's scroll position survives a trip back to the launcher);
   the sniffer keeps capturing regardless of which app is on screen
-- `launcher.py` — the home screen: a grid of app icons, tap one to launch
-  it. Add an entry to `launcher.py`'s `APPS` list (and wire it up in
-  `main.py`) to add a new app
-- `theme.py` — shared colors and touch-target sizing used by every app,
-  so they look consistent
+- `launcher.py` — the home screen, iOS springboard style: gradient
+  wallpaper, a status bar (clock + capture indicator), and a grid of
+  squircle app icons - tap one to launch it. Add an entry to
+  `launcher.py`'s `APPS` list (and wire it up in `main.py`) to add a new app
+- `theme.py` — the iOS-style design tokens: dark-mode system colors, type
+  scale, layout metrics, and the font loader. Everything is drawn in the
+  bundled **Inter** typeface (`fonts/`, SIL Open Font License - see
+  `fonts/Inter-LICENSE.txt`), the closest open match to Apple's SF Pro, so
+  the Pi looks the same regardless of installed system fonts
+- `icons.py` — vector glyphs (wifi, gear, radar, antenna, chevrons, ...)
+  and the gradient app icons, drawn with pygame primitives at 4x and
+  smooth-scaled for anti-aliased edges, then cached - no image assets
 - `ui.py` — the **WiFi Scanner** app, three screens navigated entirely by
-  touch:
-  - **List**: tap a row to open its detail screen, swipe up/down to
-    scroll, tap the icon top-left to return to the launcher, tap the
-    icon top-right to toggle SSID hide mode
-  - **Detail**: SSID/BSSID/vendor/band/RSSI; tap **TRACK** to start
-    tracking, **BACK** to return to the list
+  touch, with press highlights and momentum scrolling:
+  - **Networks**: large-title list with a signal glyph, RSSI and band per
+    row. Drag to scroll (it coasts when you flick), tap a row to open it,
+    flip the **Hide** switch to hide whitelisted networks, **Home** goes
+    back to the launcher
+  - **Detail**: info card (vendor, band, channel, signal, status) and a
+    **Track Signal** button
   - **Tracking**: locks the channel hopper onto that one BSSID's channel
     (so you get frequent, uninterrupted readings instead of a hop-diluted
-    one), shows a big live RSSI number, a peak-hold marker, a bar meter,
-    and a recent-history trend graph. Tap **STOP** to resume normal
-    hopping and return to detail.
+    one), shows a big live RSSI number, a capsule gauge with a peak-hold
+    tick, and a signal-trend graph. **Stop Tracking** (or **Back**)
+    resumes normal hopping
 - `radar_app.py` — the **Radar** app. Pick a target network, then
   physically rotate your directional antenna while dragging a finger
   around the on-screen dial to match your heading - the app samples live
@@ -177,8 +185,8 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
   signal). Sweep a full circle and the blip closest to center marks your
   best bearing. There's no magnetometer/gyro on this build, so the angle
   is relative to wherever you started the drag, not true north - you're
-  the sensor, syncing the needle to your own rotation. Tap **BACK** to
-  stop and pick a different target, **RESET** to clear the sweep and
+  the sensor, syncing the needle to your own rotation. Tap **Targets** to
+  stop and pick a different target, **Reset** to clear the sweep and
   start over on the same one
 - `settings_app.py` — the **Settings** app: a main menu that pushes
   sub-screens onto a stack. To add a setting, write a `SettingsScreen`
@@ -197,7 +205,7 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
     NetworkManager to leave it alone, hands the old one back to
     NetworkManager, restarts the capture, and rolls back to the old
     antenna if the switch fails. Saved to `settings.json`
-  - **Shut Down** / **Reboot**, each behind a confirm screen (a
+  - **Shut Down** / **Reboot**, each behind a confirm alert (a
     touchscreen mis-tap shouldn't be able to power the device off)
 - `keyboard.py` — the on-screen keyboard (letters, shift, numbers,
   symbols, show/hide for passwords) used for Wi-Fi passwords and typed
@@ -205,8 +213,12 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
 - `system.py` — wrappers around `nmcli` / `iw` / `ip` (all run as argv
   lists, never through a shell, so typed SSIDs/passwords can't inject
   commands) plus `BackgroundTask`, which runs slow calls off the UI thread
-- `widgets.py` — shared drawing/layout helpers (bottom button bar,
-  scrollable-list math, text truncation) used by every app
+- `widgets.py` — the UI toolkit every app draws with: anti-aliased
+  rounded shapes, touch `Gesture` tracking (tap vs drag, fling velocity),
+  the momentum-scrolling `ListView`, and the iOS components built on them
+  (navigation bar, toolbar, filled buttons, switch, alerts, spinner HUD).
+  Tap targets come from plain geometry functions so drawing and
+  hit-testing can't drift apart
 - `sniffer.py` — Scapy-based beacon/probe-response capture, hops across a
   channel list covering both 2.4G and 5G, tracks last-seen time per BSSID
 - `oui.py` — offline MAC vendor lookup using a bundled Wireshark-format
@@ -219,8 +231,8 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
 ### Using the tracking screen to hunt down a signal
 
 Point your directional antenna, tap the target SSID to open its detail
-screen, tap TRACK. Then slowly rotate/walk with the antenna and watch the
-big RSSI number and the peak-hold line (yellow) on the bar — RSSI gets
+screen, tap Track Signal. Then slowly rotate/walk with the antenna and watch the
+big RSSI number and the peak-hold tick (white) on the gauge — RSSI gets
 less negative (closer to 0) as you point toward or move closer to the
 source. This is the same "hotter/colder" method used in classic radio
 direction finding, just without a magnetometer for an actual compass

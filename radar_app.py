@@ -13,22 +13,30 @@
 # "up" on screen when you first touched down), not true north.
 
 import math
-import pygame
-import config
-from theme import BLACK, WHITE, GRAY, GREEN, YELLOW, DIM, RED, BTN_BACK, HEADER_H, FOOTER_H, ICON_SIZE, TAP_SLOP
-from widgets import draw_button_bar
 
-ROW_H = 84
+import pygame
+
+import config
+import theme
+from theme import BG, LABEL, LABEL2, LABEL3, YELLOW, MARGIN, font
+from icons import draw_glyph
+from widgets import (Gesture, ListView, aa_circle, aa_rrect, draw_cell, draw_nav_bar, draw_toolbar,
+                     fit_text, nav_height, nav_left_rect, signal_level, text, toolbar_hit, wrap_text)
+
+W, H = config.SCREEN_SIZE
+ROW_H = 80
 ANGLE_STEP = 5  # degrees per sample bucket around the dial
-CENTER = (config.SCREEN_SIZE[0] // 2, 340)
-RADIUS = 190
+CENTER = (W // 2, 452)
+RADIUS = 178
+
+SCOPE_BG = (7, 24, 15)
+SCOPE_LINE = (28, 88, 52)
+SCOPE_GREEN = (80, 255, 140)
 
 class RadarApp:
     def __init__(self, on_home=None, on_lock_channel=None, on_unlock_channel=None):
         pygame.init()
         self.screen = pygame.Surface(config.SCREEN_SIZE)
-        self.font = pygame.font.SysFont("dejavusansmono", 22)
-        self.font_small = pygame.font.SysFont("dejavusansmono", 16)
         self.on_home = on_home
         self.on_lock_channel = on_lock_channel     # callback(channel)
         self.on_unlock_channel = on_unlock_channel # callback()
@@ -41,14 +49,15 @@ class RadarApp:
         self.peak_angle = None
         self.peak_rssi = None
 
-        self.scroll = 0
-        self._touch_start = None
-        self._dragging = False
+        self.list = ListView(ROW_H, top=nav_height(large=True))
+        self.gesture = Gesture()
+        self._dragging = False     # finger is steering the needle
+        self._count = 0
 
     # --- lifecycle, driven by main.py ---
     def start_sweep(self, network):
         self.target_bssid = network["bssid"]
-        self.target_name = network["ssid"] if network["ssid"] else "(hidden)"
+        self.target_name = network["ssid"] if network["ssid"] else "Hidden Network"
         self.samples = {}
         self.peak_angle = None
         self.peak_rssi = None
@@ -64,13 +73,6 @@ class RadarApp:
     def update_rssi(self, rssi):
         self.current_rssi = rssi
 
-    def _visible_rows(self):
-        h = config.SCREEN_SIZE[1] - HEADER_H - FOOTER_H
-        return max(1, h // ROW_H)
-
-    def _home_icon_rect(self):
-        return pygame.Rect(14, (HEADER_H - ICON_SIZE) // 2, ICON_SIZE, ICON_SIZE)
-
     def _angle_from_point(self, x, y):
         dx, dy = x - CENTER[0], y - CENTER[1]
         return math.degrees(math.atan2(dx, -dy)) % 360  # 0 = up, clockwise
@@ -80,28 +82,32 @@ class RadarApp:
 
     # --- touch handling ---
     def touch_down(self, x, y):
-        self._touch_start = (x, y)
         self._dragging = self.target_bssid is not None and self._in_dial(x, y)
         if self._dragging:
             self._update_needle(x, y)
+        else:
+            self.gesture.down(x, y)
 
     def touch_drag(self, x, y):
         if self._dragging:
             self._update_needle(x, y)
+            return
+        dx, dy = self.gesture.move(x, y)
+        if dy and self.target_bssid is None:
+            self.list.drag(dy, self._count)
 
     def touch_up(self, x, y, networks):
-        was_dragging = self._dragging
-        self._dragging = False
-        sx, sy = self._touch_start if self._touch_start else (x, y)
-        self._touch_start = None
-        if was_dragging:
+        if self._dragging:
+            self._dragging = False
             return
-        if abs(x - sx) > TAP_SLOP or abs(y - sy) > TAP_SLOP:
-            return
-        if self.target_bssid is None:
-            self._tap_pick(x, y, networks)
-        else:
-            self._tap_sweep(x, y)
+        kind, velocity = self.gesture.up(x, y)
+        if kind == "tap":
+            if self.target_bssid is None:
+                self._tap_pick(x, y, networks)
+            else:
+                self._tap_sweep(x, y)
+        elif kind == "drag" and self.target_bssid is None:
+            self.list.fling(velocity[1])
 
     def _update_needle(self, x, y):
         self.needle_angle = self._angle_from_point(x, y)
@@ -113,105 +119,111 @@ class RadarApp:
                 self.peak_angle = bucket
 
     def _tap_pick(self, x, y, networks):
-        h = config.SCREEN_SIZE[1]
-        if self._home_icon_rect().collidepoint(x, y):
+        if nav_left_rect().collidepoint(x, y):
             if self.on_home:
                 self.on_home()
             return
-        if y < HEADER_H or y >= h - FOOTER_H:
-            return
-        row_idx = self.scroll + (y - HEADER_H) // ROW_H
-        if 0 <= row_idx < len(networks) and networks[row_idx].get("channel"):
-            self.start_sweep(networks[row_idx])
+        idx = self.list.index_at(x, y, len(networks))
+        if idx is not None and networks[idx].get("channel"):
+            self.start_sweep(networks[idx])
 
     def _tap_sweep(self, x, y):
-        w, h = config.SCREEN_SIZE
-        if y < h - FOOTER_H:
-            return
-        if x < w // 2:
+        if nav_left_rect().collidepoint(x, y):
             self.stop_sweep()
-        else:
+        elif toolbar_hit(x, y, 1) is not None:
             self.samples = {}
             self.peak_angle = None
             self.peak_rssi = None
 
     # --- drawing ---
     def draw(self, networks):
-        self.screen.fill(BLACK)
+        self.screen.fill(BG)
         if self.target_bssid is None:
             self._draw_pick(networks)
         else:
             self._draw_sweep()
 
     def _draw_pick(self, networks):
-        w, h = config.SCREEN_SIZE
-        home_rect = self._home_icon_rect()
-        pygame.draw.circle(self.screen, GRAY, home_rect.center, ICON_SIZE // 2, width=3)
-        roof = [(home_rect.centerx - 12, home_rect.centery - 2),
-                (home_rect.centerx, home_rect.centery - 14),
-                (home_rect.centerx + 12, home_rect.centery - 2)]
-        pygame.draw.polygon(self.screen, GRAY, roof)
-        pygame.draw.rect(self.screen, GRAY,
-                          (home_rect.centerx - 8, home_rect.centery - 2, 16, 14))
+        s = self.screen
+        pressed = self.gesture.pressed
+        self._count = len(networks)
+        self.list.update(len(networks))
 
-        hdr = self.font.render("Radar - pick a target", True, WHITE)
-        self.screen.blit(hdr, (home_rect.right + 12, (HEADER_H - hdr.get_height()) // 2))
+        self.list.begin_clip(s)
+        for i in self.list.visible_range(len(networks)):
+            n = networks[i]
+            rect = self.list.row_rect(i)
+            usable = bool(n.get("channel")) and n["alive"]
+            draw_cell(s, rect, pressed=bool(usable and pressed and rect.collidepoint(pressed)
+                                            and self.list.contains(pressed)), sep_x=68, color=BG)
+            level, color = signal_level(n["rssi"]) if usable else (0, LABEL3)
+            draw_glyph(s, "wifi", (MARGIN + 18, rect.centery), 34, color, level)
+            name_col = LABEL if usable else LABEL3
+            if n["ssid"]:
+                text(s, fit_text(font(theme.BODY, "medium"), n["ssid"], W - 68 - 70), font(theme.BODY, "medium"),
+                     name_col, (68, rect.centery - 12), "midleft")
+            else:
+                text(s, "Hidden Network", font(theme.BODY), LABEL3, (68, rect.centery - 12), "midleft")
+            text(s, n["bssid"], font(theme.FOOTNOTE), LABEL2 if usable else LABEL3, (68, rect.centery + 15), "midleft")
+            if usable:
+                draw_glyph(s, "chevron_right", (W - MARGIN - 6, rect.centery), 18, LABEL3)
+        self.list.end_clip(s)
+        self.list.draw_scrollbar(s, len(networks))
 
-        rows = self._visible_rows()
-        visible = networks[self.scroll: self.scroll + rows]
-        y = HEADER_H
-        for n in visible:
-            pygame.draw.line(self.screen, (40, 40, 40), (0, y), (w, y), 1)
-            has_channel = bool(n.get("channel"))
-            color = GREEN if (n["alive"] and has_channel) else DIM
-            name = n["ssid"] if n["ssid"] else "(hidden)"
-            line1 = f"{name[:20]:20} {n['band']}"
-            line2 = f"{n['bssid']}"
-            self.screen.blit(self.font.render(line1, True, color), (14, y + 10))
-            self.screen.blit(self.font_small.render(line2, True, GRAY), (14, y + 42))
-            y += ROW_H
+        draw_nav_bar(s, "Radar", left="Home", large=True, pressed=pressed)
+        text(s, "Pick a target", font(theme.FOOTNOTE), LABEL2,
+             (W - MARGIN, theme.NAV_H + theme.LARGE_TITLE_H - 14), "midright")
 
-        hint = self.font_small.render("swipe to scroll  ·  tap to sweep", True, GRAY)
-        self.screen.blit(hint, (w // 2 - hint.get_width() // 2,
-                                 h - FOOTER_H // 2 - hint.get_height() // 2))
+    def _polar(self, angle, r):
+        rad = math.radians(angle)
+        return (CENTER[0] + r * math.sin(rad), CENTER[1] - r * math.cos(rad))
 
     def _draw_sweep(self):
-        w = config.SCREEN_SIZE[0]
-        hdr = self.font_small.render(f"RADAR  {self.target_name[:24]}", True, YELLOW)
-        self.screen.blit(hdr, (14, 6))
+        s = self.screen
+        pressed = None if self._dragging else self.gesture.pressed
+        draw_nav_bar(s, "Radar", left="Targets", pressed=pressed)
 
-        rssi_txt = f"{self.current_rssi} dBm" if self.current_rssi is not None else "-- dBm"
-        rssi_line = self.font.render(rssi_txt, True, GREEN)
-        self.screen.blit(rssi_line, (w // 2 - rssi_line.get_width() // 2, 30))
+        text(s, fit_text(font(theme.BODY, "semibold"), self.target_name, W - 2 * MARGIN),
+             font(theme.BODY, "semibold"), LABEL, (W // 2, 82), "midtop")
+        _, color = signal_level(self.current_rssi)
+        reading = f"{self.current_rssi}" if self.current_rssi is not None else "--"
+        r = text(s, reading, font(58, "bold"), color, (W // 2 - 20, 150), "center")
+        text(s, "dBm", font(theme.SUBHEAD, "medium"), LABEL2, (r.right + 8, 162), "midleft")
 
-        # dial: outline + range rings
-        pygame.draw.circle(self.screen, DIM, CENTER, RADIUS, width=2)
-        pygame.draw.circle(self.screen, DIM, CENTER, RADIUS * 2 // 3, width=1)
-        pygame.draw.circle(self.screen, DIM, CENTER, RADIUS // 3, width=1)
+        # scope
+        aa_circle(s, CENTER, RADIUS + 4, (20, 52, 34))
+        aa_circle(s, CENTER, RADIUS, SCOPE_BG)
+        for frac in (1.0, 2 / 3, 1 / 3):
+            rr = int(RADIUS * frac)
+            aa_rrect(s, (CENTER[0] - rr, CENTER[1] - rr, rr * 2, rr * 2), SCOPE_LINE, rr, outline=2)
+        pygame.draw.line(s, SCOPE_LINE, (CENTER[0] - RADIUS, CENTER[1]), (CENTER[0] + RADIUS, CENTER[1]), 1)
+        pygame.draw.line(s, SCOPE_LINE, (CENTER[0], CENTER[1] - RADIUS), (CENTER[0], CENTER[1] + RADIUS), 1)
+        for deg in range(0, 360, 30):
+            inner = RADIUS - (14 if deg % 90 == 0 else 8)
+            pygame.draw.line(s, SCOPE_LINE, self._polar(deg, inner), self._polar(deg, RADIUS), 2)
+        for deg in (0, 90, 180, 270):
+            text(s, f"{deg}°", font(theme.CAPTION, "medium"), LABEL3, self._polar(deg, RADIUS + 22), "center")
 
         # blips - one per sampled angle bucket, radius scaled by strength
         for angle, rssi in self.samples.items():
             pct = max(0, min(1, (rssi + 90) / 60))  # -90..-30 dBm -> 0..1
-            r = RADIUS * (1 - pct)
-            rad = math.radians(angle)
-            bx = CENTER[0] + r * math.sin(rad)
-            by = CENTER[1] - r * math.cos(rad)
+            bx, by = self._polar(angle, RADIUS * (1 - pct))
             is_peak = (angle == self.peak_angle)
-            pygame.draw.circle(self.screen, YELLOW if is_peak else GREEN, (int(bx), int(by)),
-                                6 if is_peak else 4)
+            aa_circle(s, (bx, by), 12 if is_peak else 9, (255, 214, 10, 70) if is_peak else (80, 255, 140, 60))
+            aa_circle(s, (bx, by), 7 if is_peak else 5, YELLOW if is_peak else SCOPE_GREEN)
 
-        # needle showing the current drag position
-        nrad = math.radians(self.needle_angle)
-        nx = CENTER[0] + RADIUS * math.sin(nrad)
-        ny = CENTER[1] - RADIUS * math.cos(nrad)
-        pygame.draw.line(self.screen, WHITE, CENTER, (nx, ny), 3)
-        pygame.draw.circle(self.screen, WHITE, CENTER, 5)
+        # needle
+        tip = self._polar(self.needle_angle, RADIUS)
+        pygame.draw.line(s, SCOPE_GREEN, CENTER, tip, 3)
+        aa_circle(s, CENTER, 7, SCOPE_GREEN)
 
         if self.peak_angle is not None:
-            peak_txt = f"peak: {self.peak_angle}°  ({self.peak_rssi} dBm)"
+            text(s, f"Peak  {self.peak_angle}°  ·  {self.peak_rssi} dBm", font(theme.FOOTNOTE + 1, "medium"),
+                 YELLOW, (W // 2, CENTER[1] + RADIUS + 38), "midtop")
         else:
-            peak_txt = "drag around the dial to sweep"
-        peak_line = self.font_small.render(peak_txt, True, GRAY)
-        self.screen.blit(peak_line, (w // 2 - peak_line.get_width() // 2, CENTER[1] + RADIUS + 20))
+            for i, line in enumerate(wrap_text(font(theme.FOOTNOTE + 1),
+                                               "Rotate your antenna while dragging around the dial to match",
+                                               W - 2 * MARGIN - 40)):
+                text(s, line, font(theme.FOOTNOTE + 1), LABEL2, (W // 2, CENTER[1] + RADIUS + 38 + i * 22), "midtop")
 
-        draw_button_bar(self.screen, self.font, [("BACK", BTN_BACK), ("RESET", RED)])
+        draw_toolbar(s, [("refresh", "Reset", "default")], pressed)

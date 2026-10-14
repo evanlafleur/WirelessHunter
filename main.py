@@ -38,7 +38,7 @@ def main():
         nonlocal current_app
         current_app = app_id
 
-    launcher = Launcher(on_launch=launch)
+    launcher = Launcher(on_launch=launch, tracker=tracker)
     wifi_ui = UI(
         on_track_start=lambda channel: tracker.lock_channel(channel),
         on_track_stop=lambda: tracker.unlock_channel(),
@@ -103,11 +103,7 @@ def main():
                     return
 
                 if event.type in (pygame.MOUSEMOTION, pygame.FINGERMOTION):
-                    # Only the radar app's sweep needle needs continuous
-                    # drag tracking - every other screen only cares about
-                    # touch down/up.
-                    if current_app != "radar":
-                        continue
+                    # Drags scroll lists in every app and steer the radar needle.
                     if event.type == pygame.FINGERMOTION:
                         px = event.x * config.PHYSICAL_SIZE[0]
                         py = event.y * config.PHYSICAL_SIZE[1]
@@ -116,7 +112,14 @@ def main():
                             continue
                         px, py = event.pos
                     lx, ly = display.physical_to_logical(px, py)
-                    radar_app.touch_drag(lx, ly)
+                    if current_app == "home":
+                        launcher.touch_drag(lx, ly)
+                    elif current_app == "wifi":
+                        wifi_ui.touch_drag(lx, ly)
+                    elif current_app == "radar":
+                        radar_app.touch_drag(lx, ly)
+                    elif current_app == "settings":
+                        settings_app.touch_drag(lx, ly)
                     continue
 
                 if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP,

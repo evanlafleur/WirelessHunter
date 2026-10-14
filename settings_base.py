@@ -1,10 +1,14 @@
 # --- settings_base.py ---
 # Shared base for the Settings app's sub-screens. SettingsApp keeps a
-# stack of these; a screen navigates with self.app.push()/pop().
+# stack of these; a screen navigates with self.app.push()/pop(), and reads
+# self.app.pressed (the current touch position, or None) to draw iOS-style
+# press highlights.
 
 from keyboard import TextInput
 
 class SettingsScreen:
+    modal = False   # True: drawn on top of the screen beneath it (alerts)
+
     def __init__(self, app):
         self.app = app
 
@@ -14,13 +18,13 @@ class SettingsScreen:
     def update(self):
         """Called once per frame before draw() - poll background tasks here."""
 
-    def down(self, x, y):
+    def drag(self, dx, dy):
+        pass
+
+    def fling(self, vx, vy):
         pass
 
     def tap(self, x, y):
-        pass
-
-    def swipe(self, dx, dy):
         pass
 
     def draw(self, surface):
@@ -29,18 +33,12 @@ class SettingsScreen:
 
 class KeyboardScreen(SettingsScreen):
     """Full-screen text entry. Calls on_done(text) after popping itself
-    when the user taps OK; CANCEL just pops."""
+    when the user taps Done; Cancel just pops."""
     def __init__(self, app, title, on_done, initial="", secret=False, max_len=63):
         super().__init__(app)
         self.on_done = on_done
         self.input = TextInput()
         self.input.start(title, initial=initial, secret=secret, max_len=max_len)
-
-    def down(self, x, y):
-        self.input.down(x, y)
-
-    def swipe(self, dx, dy):
-        self.input.clear_down()
 
     def tap(self, x, y):
         result = self.input.tap(x, y)
@@ -52,4 +50,4 @@ class KeyboardScreen(SettingsScreen):
             self.on_done(text)
 
     def draw(self, surface):
-        self.input.draw(surface)
+        self.input.draw(surface, self.app.pressed)

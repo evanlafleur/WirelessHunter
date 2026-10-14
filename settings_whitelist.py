@@ -1,16 +1,21 @@
 # --- settings_whitelist.py ---
 # Settings > SSID Whitelist: edits config.HIDDEN_SSIDS (the SSIDs that
-# disappear from the WiFi Scanner list when hide mode is on) and saves
-# the change back to .env so it survives a reboot.
+# disappear from the WiFi Scanner list when hide mode is on, along with
+# the rest of the same router's broadcasts - see hiding.py) and saves the
+# change back to .env so it survives a reboot.
 
-import pygame
 import config
-from theme import WHITE, GRAY, GREEN, RED, BTN_BACK, HEADER_H
-from widgets import ListView, draw_button_bar, fit_text, footer_button_index
+import theme
+from theme import LABEL, LABEL2, GREEN, RED, MARGIN, font
+from icons import draw_glyph
+from widgets import (ListView, aa_circle, draw_cell, draw_nav_bar, draw_toolbar, fit_text,
+                     nav_left_rect, signal_level, text, toolbar_hit, wrap_text)
 from settings_base import SettingsScreen, KeyboardScreen
 
-ROW_H = 72
-DELETE_W = 90   # right-hand slice of a row that deletes it
+W, H = config.SCREEN_SIZE
+ROW_H = 68
+LIST_TOP = theme.NAV_H + 84
+BADGE_ZONE = 76   # left slice of a row where the red minus deletes it
 
 def _add_ssid(ssid):
     """Adds to the whitelist and saves. Returns (ok, message)."""
@@ -34,13 +39,17 @@ def _remove_ssid(ssid):
         return False, f"couldn't save .env: {e}"
     return True, f"Removed {ssid}"
 
+def _footnote(surface, string, y):
+    for i, line in enumerate(wrap_text(font(theme.FOOTNOTE), string, W - 2 * MARGIN - 16)[:3]):
+        text(surface, line, font(theme.FOOTNOTE), LABEL2, (MARGIN + 16, y + i * 20), "topleft")
+
 
 class WhitelistScreen(SettingsScreen):
     def __init__(self, app):
         super().__init__(app)
-        self.list = ListView(ROW_H)
+        self.list = ListView(ROW_H, top=LIST_TOP, bottom=H - theme.TOOLBAR_H)
         self.message = ""
-        self.message_color = GRAY
+        self.message_color = LABEL2
 
     def _items(self):
         return sorted(config.HIDDEN_SSIDS, key=str.lower)
@@ -50,53 +59,58 @@ class WhitelistScreen(SettingsScreen):
         if msg:
             self.message, self.message_color = msg, (GREEN if ok else RED)
 
-    def swipe(self, dx, dy):
-        if abs(dy) > abs(dx):
-            self.list.swipe(dy, len(self._items()))
+    def update(self):
+        self.list.update(len(self._items()))
+
+    def drag(self, dx, dy):
+        self.list.drag(dy, len(self._items()))
+
+    def fling(self, vx, vy):
+        self.list.fling(vy)
 
     def tap(self, x, y):
-        btn = footer_button_index(x, y, 3)
-        if btn == 0:
+        if nav_left_rect().collidepoint(x, y):
             self.app.pop()
-        elif btn == 1:
+            return
+        btn = toolbar_hit(x, y, 2)
+        if btn == 0:
             self.app.push(NearbyScreen(self.app, self))
-        elif btn == 2:
+        elif btn == 1:
             self.app.push(KeyboardScreen(
-                self.app, "Add SSID to whitelist", max_len=32,
-                on_done=lambda text: self._say(_add_ssid(text))))
+                self.app, "Add SSID", max_len=32,
+                on_done=lambda t: self._say(_add_ssid(t))))
         if btn is not None:
             return
         items = self._items()
         idx = self.list.index_at(x, y, len(items))
-        if idx is not None and x >= config.SCREEN_SIZE[0] - DELETE_W:
+        if idx is not None and x < BADGE_ZONE:
             self._say(_remove_ssid(items[idx]))
-            self.list.clamp(len(self._items()))
 
     def draw(self, surface):
-        w = config.SCREEN_SIZE[0]
+        pressed = self.app.pressed
+        draw_nav_bar(surface, "SSID Whitelist", left="Settings", pressed=pressed)
         items = self._items()
-        title = self.app.font.render(f"SSID Whitelist ({len(items)})", True, WHITE)
-        surface.blit(title, (14, (HEADER_H - title.get_height()) // 2))
+        _footnote(surface, "Networks listed here, and anything else the same router broadcasts, "
+                           "are hidden while Hide is on.", theme.NAV_H + 10)
 
+        self.list.begin_clip(surface)
         for i in self.list.visible_range(len(items)):
             rect = self.list.row_rect(i)
-            pygame.draw.line(surface, (40, 40, 40), (0, rect.y), (w, rect.y), 1)
-            name = self.app.font.render(fit_text(self.app.font, items[i], w - DELETE_W - 28), True, WHITE)
-            surface.blit(name, (14, rect.centery - name.get_height() // 2))
-            box = pygame.Rect(w - DELETE_W + 14, rect.y + 10, DELETE_W - 28, ROW_H - 20)
-            pygame.draw.rect(surface, RED, box, width=3, border_radius=10)
-            x = self.app.font.render("X", True, RED)
-            surface.blit(x, (box.centerx - x.get_width() // 2, box.centery - x.get_height() // 2))
-
+            draw_cell(surface, rect, pressed=bool(pressed and rect.collidepoint(pressed) and pressed[0] < BADGE_ZONE
+                                                  and self.list.contains(pressed)), sep_x=BADGE_ZONE - 8)
+            aa_circle(surface, (MARGIN + 18, rect.centery), 15, RED)
+            draw_glyph(surface, "minus", (MARGIN + 18, rect.centery), 16, (255, 255, 255))
+            text(surface, fit_text(font(theme.BODY), items[i], W - BADGE_ZONE - MARGIN - 8), font(theme.BODY),
+                 LABEL, (BADGE_ZONE - 8, rect.centery), "midleft")
         if not items:
-            hint = self.app.font_small.render("No SSIDs whitelisted yet.", True, GRAY)
-            surface.blit(hint, (w // 2 - hint.get_width() // 2, 300))
-        if self.message:
-            msg = self.app.font_small.render(fit_text(self.app.font_small, self.message, w - 28),
-                                              True, self.message_color)
-            surface.blit(msg, (14, self.list.bottom - 26))
+            text(surface, "No SSIDs whitelisted", font(theme.SUBHEAD), LABEL2, (W // 2, self.list.top + 70), "midtop")
+        self.list.end_clip(surface)
+        self.list.draw_scrollbar(surface, len(items))
 
-        draw_button_bar(surface, self.app.font, [("BACK", BTN_BACK), ("NEARBY", BTN_BACK), ("ADD", GREEN)])
+        if self.message:
+            text(surface, fit_text(font(theme.FOOTNOTE), self.message, W - 2 * MARGIN), font(theme.FOOTNOTE),
+                 self.message_color, (MARGIN, self.list.bottom - 26), "topleft")
+        draw_toolbar(surface, [("wifi", "Nearby", "default"), ("plus", "Add", "default")], pressed)
 
 
 class NearbyScreen(SettingsScreen):
@@ -104,8 +118,8 @@ class NearbyScreen(SettingsScreen):
     def __init__(self, app, parent):
         super().__init__(app)
         self.parent = parent
-        self.list = ListView(ROW_H)
-        self.ssids = []
+        self.list = ListView(ROW_H, top=LIST_TOP, bottom=H)
+        self.ssids = []     # [(ssid, rssi)]
 
     def on_enter(self):
         self._reload()
@@ -116,37 +130,46 @@ class NearbyScreen(SettingsScreen):
             for n in self.app.tracker.snapshot():
                 ssid = n["ssid"]
                 if ssid and "," not in ssid and ssid not in config.HIDDEN_SSIDS:
-                    if ssid not in seen or (n["rssi"] or -999) > seen[ssid]:
-                        seen[ssid] = n["rssi"] or -999
-        self.ssids = sorted(seen, key=lambda s: -seen[s])
-        self.list.clamp(len(self.ssids))
+                    rssi = n["rssi"] if n["rssi"] is not None else -999
+                    if ssid not in seen or rssi > seen[ssid]:
+                        seen[ssid] = rssi
+        self.ssids = sorted(seen.items(), key=lambda kv: -kv[1])
 
-    def swipe(self, dx, dy):
-        if abs(dy) > abs(dx):
-            self.list.swipe(dy, len(self.ssids))
+    def update(self):
+        self.list.update(len(self.ssids))
+
+    def drag(self, dx, dy):
+        self.list.drag(dy, len(self.ssids))
+
+    def fling(self, vx, vy):
+        self.list.fling(vy)
 
     def tap(self, x, y):
-        if footer_button_index(x, y, 1) is not None:
+        if nav_left_rect().collidepoint(x, y):
             self.app.pop()
             return
         idx = self.list.index_at(x, y, len(self.ssids))
         if idx is not None:
-            self.parent._say(_add_ssid(self.ssids[idx]))
+            self.parent._say(_add_ssid(self.ssids[idx][0]))
             self._reload()
 
     def draw(self, surface):
-        w = config.SCREEN_SIZE[0]
-        title = self.app.font.render("Nearby networks", True, WHITE)
-        surface.blit(title, (14, (HEADER_H - title.get_height()) // 2))
+        pressed = self.app.pressed
+        draw_nav_bar(surface, "Nearby", left="Whitelist", pressed=pressed)
+        _footnote(surface, "Tap a network to add it to the whitelist.", theme.NAV_H + 10)
+        self.list.begin_clip(surface)
         for i in self.list.visible_range(len(self.ssids)):
+            ssid, rssi = self.ssids[i]
             rect = self.list.row_rect(i)
-            pygame.draw.line(surface, (40, 40, 40), (0, rect.y), (w, rect.y), 1)
-            name = self.app.font.render(fit_text(self.app.font, self.ssids[i], w - 28), True, WHITE)
-            surface.blit(name, (14, rect.centery - name.get_height() // 2))
+            draw_cell(surface, rect, pressed=bool(pressed and rect.collidepoint(pressed)
+                                                  and self.list.contains(pressed)), sep_x=BADGE_ZONE - 8)
+            aa_circle(surface, (MARGIN + 18, rect.centery), 15, GREEN)
+            draw_glyph(surface, "plus", (MARGIN + 18, rect.centery), 16, (255, 255, 255))
+            level, _ = signal_level(rssi if rssi > -999 else None)
+            draw_glyph(surface, "wifi", (W - MARGIN - 14, rect.centery), 28, LABEL, level)
+            text(surface, fit_text(font(theme.BODY), ssid, W - BADGE_ZONE - 80), font(theme.BODY),
+                 LABEL, (BADGE_ZONE - 8, rect.centery), "midleft")
         if not self.ssids:
-            hint = self.app.font_small.render("nothing new in range", True, GRAY)
-            surface.blit(hint, (w // 2 - hint.get_width() // 2, 300))
-        else:
-            hint = self.app.font_small.render("tap a network to whitelist it", True, GRAY)
-            surface.blit(hint, (w // 2 - hint.get_width() // 2, self.list.bottom - 26))
-        draw_button_bar(surface, self.app.font, [("DONE", BTN_BACK)])
+            text(surface, "Nothing new in range", font(theme.SUBHEAD), LABEL2, (W // 2, self.list.top + 70), "midtop")
+        self.list.end_clip(surface)
+        self.list.draw_scrollbar(surface, len(self.ssids))

@@ -1,58 +1,75 @@
 # --- launcher.py ---
-# Home screen: an icon grid of "apps", like a phone springboard. Tap an
+# Home screen, iOS springboard style: gradient wallpaper, a status bar
+# (clock + capture indicator), and a grid of squircle app icons. Tap an
 # icon to launch that app - main.py owns actually switching screens via
 # the on_launch callback. Add an entry to APPS (and wire it up in
 # main.py) to add a new app to the home screen.
 
-import pygame
-import config
-from theme import BLACK, WHITE, TAP_SLOP
+import time
 
-ICON_SIZE = 120
-COL_GAP = 30
-ROW_GAP = 60
-COLS = 3
-GRID_TOP = 140
+import pygame
+
+import config
+import theme
+from theme import LABEL, GREEN, ORANGE, font
+from icons import app_icon
+from widgets import Gesture, aa_circle, fit_text, hit, lerp, text
+
+W, H = config.SCREEN_SIZE
+
+ICON = 96
+COLS = 4
+SIDE = 24
+GRID_TOP = 120
+ROW_PITCH = 156     # icon + label + gap
 
 APPS = [
-    {"id": "wifi", "label": "WiFi Scanner", "color": (50, 150, 90)},
-    {"id": "radar", "label": "Radar", "color": (50, 110, 170)},
-    {"id": "settings", "label": "Settings", "color": (90, 90, 100)},
+    {"id": "wifi", "label": "WiFi Scanner", "glyph": "wifi", "top": (88, 224, 112), "bottom": (24, 160, 68)},
+    {"id": "radar", "label": "Radar", "glyph": "radar", "top": (100, 210, 255), "bottom": (10, 110, 230)},
+    {"id": "settings", "label": "Settings", "glyph": "gear", "top": (160, 160, 166), "bottom": (92, 92, 98)},
 ]
 
+_wallpaper = None
+
+def wallpaper():
+    global _wallpaper
+    if _wallpaper is None:
+        _wallpaper = pygame.Surface((W, H))
+        for y in range(H):
+            t = y / (H - 1)
+            top, mid, bottom = (26, 40, 96), (52, 36, 104), (6, 8, 24)
+            color = lerp(top, mid, t / 0.45) if t < 0.45 else lerp(mid, bottom, (t - 0.45) / 0.55)
+            pygame.draw.line(_wallpaper, color, (0, y), (W, y))
+    return _wallpaper
+
+
 class Launcher:
-    def __init__(self, on_launch=None):
+    def __init__(self, on_launch=None, tracker=None):
         pygame.init()
         self.screen = pygame.Surface(config.SCREEN_SIZE)
-        self.font = pygame.font.SysFont("dejavusansmono", 22)
-        self.font_small = pygame.font.SysFont("dejavusansmono", 14)
         self.on_launch = on_launch
-        self._touch_start = None
+        self.tracker = tracker
+        self.gesture = Gesture()
 
     def _icon_rects(self):
-        w = config.SCREEN_SIZE[0]
-        col_pitch = ICON_SIZE + COL_GAP
-        row_pitch = ICON_SIZE + ROW_GAP
-        grid_w = COLS * ICON_SIZE + (COLS - 1) * COL_GAP
-        x0 = (w - grid_w) // 2
+        col_w = (W - 2 * SIDE) / COLS
         rects = []
         for i, app in enumerate(APPS):
             col, row = i % COLS, i // COLS
-            x = x0 + col * col_pitch
-            y = GRID_TOP + row * row_pitch
-            rects.append((app, pygame.Rect(x, y, ICON_SIZE, ICON_SIZE)))
+            x = SIDE + col * col_w + (col_w - ICON) / 2
+            rects.append((app, pygame.Rect(int(x), GRID_TOP + row * ROW_PITCH, ICON, ICON)))
         return rects
 
     # --- touch handling ---
     def touch_down(self, x, y):
-        self._touch_start = (x, y)
+        self.gesture.down(x, y)
+
+    def touch_drag(self, x, y):
+        self.gesture.move(x, y)
 
     def touch_up(self, x, y):
-        if self._touch_start is None:
-            return
-        sx, sy = self._touch_start
-        self._touch_start = None
-        if abs(x - sx) > TAP_SLOP or abs(y - sy) > TAP_SLOP:
+        kind, _ = self.gesture.up(x, y)
+        if kind != "tap":
             return
         for app, rect in self._icon_rects():
             if rect.collidepoint(x, y) and self.on_launch:
@@ -61,42 +78,25 @@ class Launcher:
 
     # --- drawing ---
     def draw(self):
-        self.screen.fill(BLACK)
-        w = config.SCREEN_SIZE[0]
-        title = self.font.render("WiFi Hunter", True, WHITE)
-        self.screen.blit(title, (w // 2 - title.get_width() // 2, 40))
-
+        s = self.screen
+        s.blit(wallpaper(), (0, 0))
+        self._draw_status_bar()
+        pressed = self.gesture.pressed
         for app, rect in self._icon_rects():
-            pygame.draw.rect(self.screen, app["color"], rect, border_radius=24)
-            self._draw_glyph(app["id"], rect)
-            label = self.font_small.render(app["label"], True, WHITE)
-            self.screen.blit(label, (rect.centerx - label.get_width() // 2, rect.bottom + 10))
+            icon = app_icon(app["glyph"], ICON, app["top"], app["bottom"])
+            if hit(rect, pressed):
+                icon = icon.copy()
+                icon.fill((170, 170, 170, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            s.blit(icon, rect)
+            label = fit_text(font(theme.FOOTNOTE, "medium"), app["label"], int((W - 2 * SIDE) / COLS) - 4)
+            text(s, label, font(theme.FOOTNOTE, "medium"), LABEL, (rect.centerx, rect.bottom + 10), "midtop")
+        aa_circle(s, (W // 2, H - 96), 4, (255, 255, 255, 200))
 
-    def _draw_glyph(self, app_id, rect):
-        cx, cy = rect.center
-        if app_id == "wifi":
-            # three ascending signal bars
-            bar_w = 14
-            gap = 8
-            heights = [18, 34, 50]
-            total_w = len(heights) * bar_w + (len(heights) - 1) * gap
-            x = cx - total_w // 2
-            base_y = cy + 26
-            for h in heights:
-                pygame.draw.rect(self.screen, WHITE, (x, base_y - h, bar_w, h), border_radius=3)
-                x += bar_w + gap
-        elif app_id == "radar":
-            # concentric range rings + a sweep needle
-            for r in (12, 22, 32):
-                pygame.draw.circle(self.screen, WHITE, (cx, cy), r, width=2)
-            end = (cx + int(32 * 0.7), cy - int(32 * 0.7))
-            pygame.draw.line(self.screen, WHITE, (cx, cy), end, 3)
-        elif app_id == "settings":
-            # three horizontal slider lines with offset knobs
-            line_w = 64
-            x0 = cx - line_w // 2
-            knob_fracs = [0.7, 0.3, 0.55]
-            for i, frac in enumerate(knob_fracs):
-                y = cy - 20 + i * 20
-                pygame.draw.line(self.screen, WHITE, (x0, y), (x0 + line_w, y), 3)
-                pygame.draw.circle(self.screen, WHITE, (int(x0 + line_w * frac), y), 6)
+    def _draw_status_bar(self):
+        s = self.screen
+        text(s, time.strftime("%H:%M"), font(theme.SUBHEAD + 1, "semibold"), LABEL, (28, 26), "midleft")
+        if self.tracker is not None:
+            ok = self.tracker.status.startswith("capturing")
+            label = self.tracker.iface
+            r = text(s, label, font(theme.FOOTNOTE, "medium"), LABEL, (W - 28, 26), "midright")
+            aa_circle(s, (r.left - 14, 26), 5, GREEN if ok else ORANGE)

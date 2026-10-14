@@ -5,23 +5,30 @@
 # never freezes while a scan/connect is in flight.
 
 import pygame
+
 import config
 import system
-from theme import WHITE, GRAY, GREEN, YELLOW, DIM, RED, BTN_BACK, HEADER_H
-from widgets import ListView, draw_button_bar, fit_text, footer_button_index
+import theme
+from theme import (CELL, LABEL, LABEL2, LABEL3, BLUE, GREEN, RED, MARGIN, CARD_RADIUS, font)
+from icons import draw_glyph
+from widgets import (ListView, aa_rrect, draw_cell, draw_hud, draw_nav_bar, draw_section_header,
+                     draw_toolbar, fit_text, nav_left_rect, text, toolbar_hit)
 from settings_base import SettingsScreen, KeyboardScreen
 
-ROW_H = 76
-STATUS_H = 78
+W, H = config.SCREEN_SIZE
+ROW_H = 72
+STATUS_Y = theme.NAV_H + 16
+STATUS_H = 84
+LIST_TOP = STATUS_Y + STATUS_H + 56   # leaves room for the message line + section header
 
 class WifiScreen(SettingsScreen):
     def __init__(self, app):
         super().__init__(app)
-        self.list = ListView(ROW_H, top=HEADER_H + STATUS_H)
+        self.list = ListView(ROW_H, top=LIST_TOP, bottom=H - theme.TOOLBAR_H)
         self.networks = []
         self.status = None
         self.message = ""
-        self.message_color = GRAY
+        self.message_color = LABEL2
         self.task = None
         self.task_kind = None
         self.busy_text = ""
@@ -31,8 +38,8 @@ class WifiScreen(SettingsScreen):
         t = self.app.tracker
         return t is not None and t.iface == config.NET_IFACE
 
-    def _say(self, text, color=GRAY):
-        self.message, self.message_color = text, color
+    def _say(self, message, color=LABEL2):
+        self.message, self.message_color = message, color
 
     def _start(self, kind, busy_text, fn, *args):
         self.task_kind, self.busy_text = kind, busy_text
@@ -45,7 +52,7 @@ class WifiScreen(SettingsScreen):
     def refresh(self, rescan=True):
         if self._unavailable() or self.task:
             return
-        self._start("refresh", "Scanning...", self._do_refresh, rescan)
+        self._start("refresh", "Scanning…", self._do_refresh, rescan)
 
     @staticmethod
     def _do_refresh(rescan):
@@ -53,7 +60,7 @@ class WifiScreen(SettingsScreen):
 
     def _connect(self, ssid, password=None, forget_first=False):
         self._ctx = (ssid, password)
-        self._start("connect", f"Connecting to {ssid}...", system.wifi_connect,
+        self._start("connect", f"Connecting to {ssid}…", system.wifi_connect,
                     config.NET_IFACE, ssid, password, forget_first)
 
     def _ask_password(self, ssid, retry=False):
@@ -62,8 +69,13 @@ class WifiScreen(SettingsScreen):
             self.app, title, secret=True,
             on_done=lambda pw: self._connect(ssid, pw, forget_first=True) if pw else None))
 
+    def _sync_summary(self):
+        st = self.status
+        self.app.wifi_summary = st["connection"] if st and st["state"] == "connected" else "Not Connected"
+
     # --- per-frame ---
     def update(self):
+        self.list.update(len(self.networks))
         t = self.task
         if t is None or not t.done:
             return
@@ -74,7 +86,7 @@ class WifiScreen(SettingsScreen):
             return
         if kind == "refresh":
             self.status, self.networks = t.result
-            self.list.clamp(len(self.networks))
+            self._sync_summary()
             return
         ok, msg = t.result
         if kind == "connect":
@@ -87,26 +99,35 @@ class WifiScreen(SettingsScreen):
                 if net and net["saved"] and password is None:
                     self._ask_password(ssid, retry=True)
         elif kind == "disconnect":
-            self._say("Disconnected" if ok else msg, GRAY if ok else RED)
+            self._say("Disconnected" if ok else msg, LABEL2 if ok else RED)
         self.refresh(rescan=False)
 
     # --- touch ---
-    def swipe(self, dx, dy):
-        if abs(dy) > abs(dx):
-            self.list.swipe(dy, len(self.networks))
+    def drag(self, dx, dy):
+        self.list.drag(dy, len(self.networks))
+
+    def fling(self, vx, vy):
+        self.list.fling(vy)
+
+    def _toolbar_items(self):
+        connected = bool(self.status and self.status["state"] == "connected") and not self.task
+        return [("refresh", "Scan", "default"),
+                ("xmark", "Disconnect", "destructive" if connected else "disabled")]
 
     def tap(self, x, y):
-        unavailable = self._unavailable()
-        btn = footer_button_index(x, y, 1 if unavailable else 3)
+        if nav_left_rect().collidepoint(x, y):
+            self.app.pop()
+            return
+        if self._unavailable():
+            return
+        btn = toolbar_hit(x, y, 2)
         if btn is not None:
             if btn == 0:
-                self.app.pop()
-            elif btn == 1:
                 self.refresh()
-            elif btn == 2 and not self.task and self.status and self.status["state"] == "connected":
-                self._start("disconnect", "Disconnecting...", system.wifi_disconnect, config.NET_IFACE)
+            elif btn == 1 and self._toolbar_items()[1][2] == "destructive":
+                self._start("disconnect", "Disconnecting…", system.wifi_disconnect, config.NET_IFACE)
             return
-        if unavailable or self.task:
+        if self.task:
             return
         idx = self.list.index_at(x, y, len(self.networks))
         if idx is None:
@@ -121,58 +142,60 @@ class WifiScreen(SettingsScreen):
 
     # --- drawing ---
     def draw(self, surface):
-        w, h = config.SCREEN_SIZE
-        title = self.app.font.render(f"Wi-Fi  ({config.NET_IFACE})", True, WHITE)
-        surface.blit(title, (14, (HEADER_H - title.get_height()) // 2))
+        pressed = self.app.pressed
+        draw_nav_bar(surface, "Wi-Fi", left="Settings", pressed=pressed,
+                     busy=bool(self.task and self.task_kind == "refresh"))
 
         if self._unavailable():
+            draw_glyph(surface, "wifi", (W // 2, 300), 72, LABEL3, level=0)
             for i, line in enumerate((f"{config.NET_IFACE} is the scanning antenna right now.",
-                                      "Pick a different antenna in",
-                                      "Settings > Scan Antenna to use it",
-                                      "for Wi-Fi.")):
-                text = self.app.font_small.render(line, True, GRAY)
-                surface.blit(text, (w // 2 - text.get_width() // 2, 260 + i * 28))
-            draw_button_bar(surface, self.app.font, [("BACK", BTN_BACK)])
+                                      "Choose a different antenna in",
+                                      "Settings > Scan Antenna to use it for Wi-Fi.")):
+                text(surface, line, font(theme.SUBHEAD), LABEL2, (W // 2, 370 + i * 28), "midtop")
             return
 
         st = self.status
+        card = pygame.Rect(MARGIN, STATUS_Y, W - 2 * MARGIN, STATUS_H)
+        aa_rrect(surface, card, CELL, CARD_RADIUS)
         if st and st["state"] == "connected":
-            line1 = self.app.font.render(fit_text(self.app.font, f"Connected: {st['connection']}", w - 28), True, GREEN)
-            sub = st["ip"]
+            draw_glyph(surface, "check", (card.x + 34, card.centery), 26, BLUE)
+            text(surface, fit_text(font(theme.BODY, "semibold"), st["connection"], card.w - 90),
+                 font(theme.BODY, "semibold"), LABEL, (card.x + 64, card.centery - 12), "midleft")
+            text(surface, f"Connected  ·  {st['ip']}" if st["ip"] else "Connected",
+                 font(theme.FOOTNOTE), LABEL2, (card.x + 64, card.centery + 14), "midleft")
         else:
-            line1 = self.app.font.render("Not connected", True, GRAY)
-            sub = ""
-        surface.blit(line1, (14, HEADER_H + 2))
-        if self.task:
-            sub, sub_color = self.busy_text, YELLOW
-        elif self.message:
-            sub, sub_color = self.message, self.message_color
-        else:
-            sub_color = GRAY
-        surface.blit(self.app.font_small.render(fit_text(self.app.font_small, sub, w - 28), True, sub_color),
-                     (14, HEADER_H + 40))
+            text(surface, "Not Connected", font(theme.BODY, "semibold"), LABEL2, (card.x + 20, card.centery), "midleft")
 
+        msg = fit_text(font(theme.FOOTNOTE), self.message, W - 2 * MARGIN - 16) if self.message else ""
+        text(surface, msg, font(theme.FOOTNOTE), self.message_color, (MARGIN + 16, card.bottom + 10), "topleft")
+        draw_section_header(surface, "Networks", LIST_TOP - 30)
+
+        self.list.begin_clip(surface)
         for i in self.list.visible_range(len(self.networks)):
             n = self.networks[i]
             rect = self.list.row_rect(i)
-            pygame.draw.line(surface, (40, 40, 40), (0, rect.y), (w, rect.y), 1)
-            color = GREEN if n["in_use"] else WHITE
-            surface.blit(self.app.font.render(fit_text(self.app.font, n["ssid"], w - 28), True, color),
-                         (14, rect.y + 10))
-            detail = f"{n['signal']}%  {n['security'] or 'open'}"
-            if n["saved"]:
-                detail += "  saved"
+            draw_cell(surface, rect, pressed=bool(pressed and rect.collidepoint(pressed)
+                                                  and self.list.contains(pressed)), sep_x=56)
             if n["in_use"]:
-                detail += "  connected"
-            surface.blit(self.app.font_small.render(detail, True, GRAY), (14, rect.y + 42))
-
+                draw_glyph(surface, "check", (MARGIN + 14, rect.centery), 22, BLUE)
+            right = W - MARGIN
+            level = 3 if n["signal"] >= 70 else 2 if n["signal"] >= 45 else 1
+            draw_glyph(surface, "wifi", (right - 14, rect.centery), 30, LABEL, level)
+            right -= 38
+            if n["security"]:
+                draw_glyph(surface, "lock", (right - 8, rect.centery), 20, LABEL2)
+                right -= 34
+            sub = "Saved" if n["saved"] else ("Open Network" if not n["security"] else "")
+            name_y = rect.centery - (11 if sub else 0)
+            text(surface, fit_text(font(theme.BODY), n["ssid"], right - 56 - 8), font(theme.BODY),
+                 BLUE if n["in_use"] else LABEL, (56, name_y), "midleft")
+            if sub:
+                text(surface, sub, font(theme.FOOTNOTE), LABEL2, (56, rect.centery + 15), "midleft")
         if not self.networks and not self.task:
-            hint = self.app.font_small.render("no networks found - tap SCAN", True, GRAY)
-            surface.blit(hint, (w // 2 - hint.get_width() // 2, 320))
+            text(surface, "No networks found", font(theme.SUBHEAD), LABEL2, (W // 2, self.list.top + 60), "midtop")
+        self.list.end_clip(surface)
+        self.list.draw_scrollbar(surface, len(self.networks))
 
-        can_disconnect = bool(st and st["state"] == "connected") and not self.task
-        draw_button_bar(surface, self.app.font, [
-            ("BACK", BTN_BACK),
-            ("SCAN", BTN_BACK),
-            ("DISCONNECT", RED if can_disconnect else DIM),
-        ])
+        draw_toolbar(surface, self._toolbar_items(), pressed)
+        if self.task and self.task_kind in ("connect", "disconnect"):
+            draw_hud(surface, self.busy_text)

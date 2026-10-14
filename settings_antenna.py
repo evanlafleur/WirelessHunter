@@ -5,38 +5,51 @@
 # NetworkManager, and restarts the capture (see Tracker.switch_interface).
 # The choice is saved to settings.json so it sticks across reboots.
 
-import pygame
 import config
 import system
-from theme import WHITE, GRAY, GREEN, YELLOW, RED, BTN_BACK, HEADER_H
-from widgets import ListView, draw_button_bar, fit_text, footer_button_index
+import theme
+from theme import LABEL, LABEL2, BLUE, GREEN, RED, YELLOW, GRAY, MARGIN, font
+from icons import draw_glyph
+from widgets import (ListView, alert_hit, draw_alert, draw_cell, draw_hud, draw_nav_bar, draw_pill,
+                     draw_tile, draw_toolbar, fit_text, nav_left_rect, text, toolbar_hit, wrap_text)
 from settings_base import SettingsScreen
 
-ROW_H = 92
+W, H = config.SCREEN_SIZE
+ROW_H = 84
+LIST_TOP = theme.NAV_H + 84
 
 class AntennaScreen(SettingsScreen):
     def __init__(self, app):
         super().__init__(app)
-        self.list = ListView(ROW_H)
+        self.list = ListView(ROW_H, top=LIST_TOP, bottom=H - theme.TOOLBAR_H)
         self.ifaces = []
         self.pending = None     # interface awaiting switch confirmation
         self.task = None
         self.target = None      # interface being switched to
         self.message = ""
-        self.message_color = GRAY
+        self.message_color = LABEL2
 
     def on_enter(self):
         self._reload()
 
     def _reload(self):
         self.ifaces = system.list_wireless_interfaces()
-        self.list.clamp(len(self.ifaces))
 
     def _current(self):
         return self.app.tracker.iface if self.app.tracker else config.IFACE
 
+    def _alert(self):
+        """(title, message, buttons) for the pending switch."""
+        if self.pending == config.NET_IFACE:
+            msg = ("This is the onboard Wi-Fi radio. It will drop its Wi-Fi connection, "
+                   "and may not support monitor mode at all.")
+        else:
+            msg = "It will be put into monitor mode and the capture will restart."
+        return f"Scan with {self.pending}?", msg, [("Cancel", "default"), ("Switch", "bold")]
+
     # --- per-frame ---
     def update(self):
+        self.list.update(len(self.ifaces))
         if self.task is None or not self.task.done:
             return
         task, self.task = self.task, None
@@ -47,34 +60,36 @@ class AntennaScreen(SettingsScreen):
                 config.save_setting("scan_iface", self.target)
                 self.message, self.message_color = f"Now scanning on {self.target}", GREEN
             except OSError as e:
-                self.message, self.message_color = f"switched, but couldn't save choice: {e}", YELLOW
+                self.message, self.message_color = f"Switched, but couldn't save choice: {e}", YELLOW
         else:
             self.message, self.message_color = f"Switch failed: {err}", RED
         self._reload()
 
     # --- touch ---
-    def swipe(self, dx, dy):
-        if abs(dy) > abs(dx):
-            self.list.swipe(dy, len(self.ifaces))
+    def drag(self, dx, dy):
+        self.list.drag(dy, len(self.ifaces))
+
+    def fling(self, vx, vy):
+        self.list.fling(vy)
 
     def tap(self, x, y):
         if self.task:
             return
         if self.pending:
-            btn = footer_button_index(x, y, 2)
-            if btn == 0:
+            title, msg, buttons = self._alert()
+            idx = alert_hit(title, msg, buttons, x, y)
+            if idx == 0:
                 self.pending = None
-            elif btn == 1:
+            elif idx == 1:
                 self.target, self.pending = self.pending, None
                 self.message = ""
                 self.task = system.BackgroundTask(self.app.tracker.switch_interface, self.target)
             return
-        btn = footer_button_index(x, y, 2)
-        if btn == 0:
+        if nav_left_rect().collidepoint(x, y):
             self.app.pop()
-        elif btn == 1:
+            return
+        if toolbar_hit(x, y, 1) is not None:
             self._reload()
-        if btn is not None:
             return
         idx = self.list.index_at(x, y, len(self.ifaces))
         if idx is not None and self.ifaces[idx]["name"] != self._current():
@@ -82,53 +97,46 @@ class AntennaScreen(SettingsScreen):
 
     # --- drawing ---
     def draw(self, surface):
-        w = config.SCREEN_SIZE[0]
-        title = self.app.font.render("Scan Antenna", True, WHITE)
-        surface.blit(title, (14, (HEADER_H - title.get_height()) // 2))
-
-        if self.task:
-            self._draw_center(surface, [f"Switching to {self.target}...",
-                                        "enabling monitor mode and restarting capture"], YELLOW)
-            return
-        if self.pending:
-            lines = [f"Switch scanning to {self.pending}?"]
-            if self.pending == config.NET_IFACE:
-                lines += ["This is the onboard Wi-Fi radio: it will", "drop its Wi-Fi connection, and may not",
-                          "support monitor mode at all."]
-            else:
-                lines += ["It will be put into monitor mode."]
-            self._draw_center(surface, lines, WHITE)
-            draw_button_bar(surface, self.app.font, [("CANCEL", BTN_BACK), ("SWITCH", GREEN)])
-            return
+        pressed = None if (self.pending or self.task) else self.app.pressed
+        draw_nav_bar(surface, "Scan Antenna", left="Settings", pressed=pressed)
+        for i, line in enumerate(wrap_text(font(theme.FOOTNOTE),
+                                           "The wireless adapter used to capture beacons. "
+                                           "Switching puts it in monitor mode and restarts the scan.",
+                                           W - 2 * MARGIN - 16)[:3]):
+            text(surface, line, font(theme.FOOTNOTE), LABEL2, (MARGIN + 16, theme.NAV_H + 10 + i * 20), "topleft")
 
         current = self._current()
+        self.list.begin_clip(surface)
         for i in self.list.visible_range(len(self.ifaces)):
             iface = self.ifaces[i]
             rect = self.list.row_rect(i)
-            pygame.draw.line(surface, (40, 40, 40), (0, rect.y), (w, rect.y), 1)
             is_current = iface["name"] == current
-            surface.blit(self.app.font.render(iface["name"], True, GREEN if is_current else WHITE),
-                         (14, rect.y + 10))
+            draw_cell(surface, rect, pressed=bool(pressed and rect.collidepoint(pressed)
+                                                  and self.list.contains(pressed)), sep_x=74)
+            draw_tile(surface, (MARGIN + 24, rect.centery), 44, "antenna", GREEN if is_current else GRAY)
+            right = W - MARGIN
             if is_current:
-                tag = self.app.font_small.render("SCANNING", True, GREEN)
-                surface.blit(tag, (w - tag.get_width() - 14, rect.y + 14))
+                draw_glyph(surface, "check", (right - 10, rect.centery), 24, BLUE)
+                right -= 40
             elif iface["name"] == config.NET_IFACE:
-                tag = self.app.font_small.render("Wi-Fi connection", True, GRAY)
-                surface.blit(tag, (w - tag.get_width() - 14, rect.y + 14))
+                right -= draw_pill(surface, "Wi-Fi", right, rect.centery) + 10
+            text(surface, iface["name"], font(theme.BODY, "semibold"), LABEL, (74, rect.centery - 13), "midleft")
             detail = " · ".join(p for p in (iface["driver"], iface["type"], iface["mac"]) if p)
-            surface.blit(self.app.font_small.render(fit_text(self.app.font_small, detail, w - 28), True, GRAY),
-                         (14, rect.y + 46))
+            text(surface, fit_text(font(theme.CAPTION + 1), detail, right - 74 - 8), font(theme.CAPTION + 1),
+                 LABEL2, (74, rect.centery + 14), "midleft")
         if not self.ifaces:
-            hint = self.app.font_small.render("no wireless interfaces found", True, GRAY)
-            surface.blit(hint, (w // 2 - hint.get_width() // 2, 300))
-        if self.message:
-            msg = self.app.font_small.render(fit_text(self.app.font_small, self.message, w - 28),
-                                              True, self.message_color)
-            surface.blit(msg, (14, self.list.bottom - 26))
-        draw_button_bar(surface, self.app.font, [("BACK", BTN_BACK), ("REFRESH", BTN_BACK)])
+            text(surface, "No wireless interfaces found", font(theme.SUBHEAD), LABEL2,
+                 (W // 2, self.list.top + 70), "midtop")
+        self.list.end_clip(surface)
+        self.list.draw_scrollbar(surface, len(self.ifaces))
 
-    def _draw_center(self, surface, lines, color):
-        w = config.SCREEN_SIZE[0]
-        for i, line in enumerate(lines):
-            text = self.app.font.render(line, True, color) if i == 0 else self.app.font_small.render(line, True, GRAY)
-            surface.blit(text, (w // 2 - text.get_width() // 2, 260 + i * 34))
+        if self.message:
+            text(surface, fit_text(font(theme.FOOTNOTE), self.message, W - 2 * MARGIN), font(theme.FOOTNOTE),
+                 self.message_color, (MARGIN, self.list.bottom - 26), "topleft")
+        draw_toolbar(surface, [("refresh", "Refresh", "default")], pressed)
+
+        if self.task:
+            draw_hud(surface, f"Switching to {self.target}…")
+        elif self.pending:
+            title, msg, buttons = self._alert()
+            draw_alert(surface, title, msg, buttons, self.app.pressed)
