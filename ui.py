@@ -27,6 +27,17 @@ BUTTON_H = 60
 def band_label(band):
     return {"2.4G": "2.4 GHz", "5G": "5 GHz"}.get(band, band or "")
 
+def row_detail(network, max_width):
+    """Second line of a list row: "Manufacturer  ·  BSSID", with the
+    manufacturer truncated first if space is short."""
+    fnt = font(theme.FOOTNOTE)
+    bssid, vendor = network["bssid"], network.get("vendor") or ""
+    sep = "  ·  "
+    room = max_width - fnt.size(bssid + sep)[0]
+    if not vendor or room < 60:
+        return bssid
+    return fit_text(fnt, vendor, room) + sep + bssid
+
 def button_rect():
     return pygame.Rect(MARGIN, H - BUTTON_H - 28, W - 2 * MARGIN, BUTTON_H)
 
@@ -144,7 +155,7 @@ class UI:
                      name_col, (68, rect.centery - 12), "midleft")
             else:
                 text(s, "Hidden Network", font(theme.BODY), LABEL3, (68, rect.centery - 12), "midleft")
-            text(s, n["bssid"], font(theme.FOOTNOTE), LABEL2 if n["alive"] else LABEL3,
+            text(s, row_detail(n, 286), font(theme.FOOTNOTE), LABEL2 if n["alive"] else LABEL3,
                  (68, rect.centery + 15), "midleft")
             draw_glyph(s, "chevron_right", (W - MARGIN - 6, rect.centery), 18, LABEL3)
             rssi = f"{n['rssi']} dBm" if n["rssi"] is not None else "-- dBm"
@@ -179,7 +190,7 @@ class UI:
         text(s, n["bssid"], font(theme.FOOTNOTE + 1), LABEL2, (W // 2, 258), "midtop")
 
         rows = [
-            ("Vendor", n["vendor"] or "Unknown", LABEL2),
+            ("Manufacturer", n["vendor"] or "Unknown", LABEL2),
             ("Band", band_label(n["band"]), LABEL2),
             ("Channel", str(n["channel"]) if n["channel"] else "Unknown", LABEL2),
             ("Signal", f"{n['rssi']} dBm" if n["rssi"] is not None else "--", color if n["alive"] else LABEL2),

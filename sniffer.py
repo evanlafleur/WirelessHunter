@@ -10,6 +10,7 @@ from scapy.all import AsyncSniffer, Dot11, Dot11Beacon, Dot11ProbeResp, Dot11Elt
 
 import config
 import system
+from apgroup import inherit_vendors
 from oui import OuiLookup
 
 HISTORY_LEN = 40   # ~ last 40 readings for the tracking screen's mini-graph
@@ -17,7 +18,7 @@ HISTORY_LEN = 40   # ~ last 40 readings for the tracking screen's mini-graph
 class Tracker:
     def __init__(self, iface, manuf_path):
         self.iface = iface
-        self.oui = OuiLookup(manuf_path)
+        self.oui = OuiLookup(manuf_path, background=True)   # 3 MB database: don't delay startup
         self.lock = threading.Lock()
         self.networks = {}   # bssid -> dict(ssid, vendor, band, channel, rssi, last_seen)
         self.history = {}    # bssid -> deque of recent rssi readings
@@ -199,6 +200,7 @@ class Tracker:
                 e = dict(entry)
                 e["alive"] = (now - e["last_seen"]) < config.GONE_AFTER_SEC
                 out.append(e)
+        inherit_vendors(out)   # nameless twins borrow their router's manufacturer
         # strongest / most recently seen first
         out.sort(key=lambda e: (not e["alive"], -(e["rssi"] or -999)))
         return out

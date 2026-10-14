@@ -1,10 +1,12 @@
 # WiFi Hunter — Pi 3B+ + Alfa AWUS036ACH + Hosyond 7" DSI Touchscreen
 
 Launches into a phone-style home screen with app icons. Currently:
-**WiFi Scanner** (tracks SSIDs/BSSIDs/vendors, live list + detail +
+**WiFi Scanner** (tracks SSIDs/BSSIDs/manufacturers, live list + detail +
 direction-finding tracking screen), **Radar** (manual-sweep polar RSSI
-plot - no magnetometer needed, see below), and **Settings** (Wi-Fi
-connection for updates, SSID whitelist editor, scan-antenna picker,
+plot - no magnetometer needed, see below; currently switched off for
+maintenance), **Update System** (shows the installed version, lists
+what's new on GitHub, and updates + restarts on request), and **Settings**
+(Wi-Fi connection for updates, SSID whitelist editor, scan-antenna picker,
 shutdown/reboot). More apps get added the same way.
 
 This build replaced an earlier Adafruit 2.8" resistive PiTFT (broken touch
@@ -178,7 +180,24 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
     one), shows a big live RSSI number, a capsule gauge with a peak-hold
     tick, and a signal-trend graph. **Stop Tracking** (or **Back**)
     resumes normal hopping
-- `radar_app.py` — the **Radar** app. Pick a target network, then
+- `update_app.py` / `updater.py` — the **Update System** app. Opening it
+  fetches from GitHub and shows the installed version (the `VERSION` file
+  plus the git build hash and date). If there are newer commits it lists
+  their subject lines as the change notes (so write clear commit
+  subjects) and offers **Update & Restart**: that fast-forwards the
+  checkout (it never rewrites or discards local work - a diverged copy or
+  conflicting local edits just report an error), reinstalls
+  `requirements.txt` only if it changed, then restarts the service. It
+  needs internet, so connect the onboard Wi-Fi in Settings first. git runs
+  as the checkout's owner rather than root, so the same SSH key /
+  credential helper you used to clone a private repo is what authenticates
+  - set those up for that user if you see "GitHub refused access". Under
+  systemd the restart is `systemctl restart wifi-hunter`
+  (`SERVICE_NAME` in `config.py`); run by hand, the app re-executes
+  itself. Bump `VERSION` when you cut a release
+- `radar_app.py` — the **Radar** app (currently switched off: its home
+  screen icon shows an "Under Maintenance" alert. To bring it back, delete
+  the `"maintenance": True` line from its entry in `launcher.py`). Pick a target network, then
   physically rotate your directional antenna while dragging a finger
   around the on-screen dial to match your heading - the app samples live
   RSSI at the current angle and plots a blip (closer to center = stronger
@@ -221,9 +240,17 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
   hit-testing can't drift apart
 - `sniffer.py` — Scapy-based beacon/probe-response capture, hops across a
   channel list covering both 2.4G and 5G, tracks last-seen time per BSSID
-- `oui.py` — offline MAC vendor lookup using a bundled Wireshark-format
-  `manuf.raw` (snapshot included; refresh anytime from Wireshark's repo for
-  newer vendor allocations)
+- `oui.py` — offline MAC address -> manufacturer lookup using the bundled
+  Wireshark-format `manuf.raw` (about 58,000 IEEE assignments, including
+  the 28- and 36-bit sub-blocks; names are tidied, e.g. "Belkin
+  International Inc." -> "Belkin International"). Randomised or
+  locally-administered addresses are retried with that bit cleared. It
+  loads in the background so startup isn't delayed. Refresh the database
+  any time: `curl -o manuf.raw https://www.wireshark.org/download/automated/data/manuf`
+- `apgroup.py` — works out which BSSIDs belong to the same access point
+  (same MAC apart from the first or last byte). Used so a router's
+  nameless "(hidden)" twin shows its router's manufacturer, and by
+  `hiding.py` so hide mode removes the whole router
 - `display.py` — opens the DSI panel as a normal SDL window and rotates
   the app's portrait UI onto its native landscape resolution each frame,
   converting touch coordinates back the other way

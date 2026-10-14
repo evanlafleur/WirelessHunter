@@ -22,6 +22,8 @@ from ui import UI
 from radar_app import RadarApp
 from launcher import Launcher
 from settings_app import SettingsApp
+from update_app import UpdateApp
+import updater
 from display import Display
 
 def main():
@@ -37,6 +39,15 @@ def main():
     def launch(app_id):
         nonlocal current_app
         current_app = app_id
+        if app_id == "update":
+            update_app.on_enter()   # check GitHub every time the app is opened
+
+    def restart():
+        # called by the Update app once new code is installed: release the
+        # display and capture, then hand over to the restart logic
+        tracker.stop()
+        display.close()
+        updater.restart_process()
 
     launcher = Launcher(on_launch=launch, tracker=tracker)
     wifi_ui = UI(
@@ -50,6 +61,7 @@ def main():
         on_unlock_channel=lambda: tracker.unlock_channel(),
     )
     settings_app = SettingsApp(on_home=go_home, tracker=tracker)
+    update_app = UpdateApp(on_home=go_home, on_restart=restart)
     display = Display()
 
     clock = pygame.time.Clock()
@@ -120,6 +132,8 @@ def main():
                         radar_app.touch_drag(lx, ly)
                     elif current_app == "settings":
                         settings_app.touch_drag(lx, ly)
+                    elif current_app == "update":
+                        update_app.touch_drag(lx, ly)
                     continue
 
                 if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP,
@@ -155,6 +169,11 @@ def main():
                         settings_app.touch_down(lx, ly)
                     else:
                         settings_app.touch_up(lx, ly)
+                elif current_app == "update":
+                    if is_down:
+                        update_app.touch_down(lx, ly)
+                    else:
+                        update_app.touch_up(lx, ly)
 
             wifi_ui.status_text = tracker.status
 
@@ -170,6 +189,9 @@ def main():
             elif current_app == "settings":
                 settings_app.draw()
                 display.push(settings_app.screen)
+            elif current_app == "update":
+                update_app.draw()
+                display.push(update_app.screen)
 
             clock.tick(30)  # touch feels more responsive at a higher rate than the old button UI
     except KeyboardInterrupt:

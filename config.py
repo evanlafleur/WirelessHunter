@@ -33,6 +33,7 @@ def _load_scan_iface():
 IFACE = _load_scan_iface()  # the scanning antenna (change it in Settings > Scan Antenna)
 NET_IFACE = "wlan0"         # onboard Pi wifi, used for internet (Settings > Wi-Fi)
 MANUF_FILE = "manuf.raw"    # OUI vendor database shipped alongside this project
+SERVICE_NAME = "wifi-hunter"  # systemd unit restarted after an update (see wifi-hunter.service)
 GONE_AFTER_SEC = 180        # mark an AP "gone" if not seen in this many seconds
 CHANNELS_24 = [1, 6, 11]              # quick-hop set for 2.4GHz (expand as needed)
 CHANNELS_5 = [36, 40, 44, 48, 149, 153, 157, 161]  # common 5GHz channels (region-dependent)

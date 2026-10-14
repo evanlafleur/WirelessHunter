@@ -131,12 +131,18 @@ def _lock(s, u, c, level):
     pygame.draw.rect(s, c, pygame.Rect(27 * u, 38 * u, 11 * u, 10 * u))
     pygame.draw.rect(s, c, pygame.Rect(62 * u, 38 * u, 11 * u, 10 * u))
 
+def _download(s, u, c, level):
+    _line(s, c, _p(u, 50, 12), _p(u, 50, 58), 10 * u)
+    _line(s, c, _p(u, 28, 38), _p(u, 50, 62), 10 * u)
+    _line(s, c, _p(u, 72, 38), _p(u, 50, 62), 10 * u)
+    _line(s, c, _p(u, 20, 84), _p(u, 80, 84), 10 * u)
+
 _GLYPHS = {
     "wifi": _wifi, "radar": _radar, "gear": _gear, "chevron_right": _chevron_right,
     "chevron_left": _chevron_left, "check": _check, "plus": _plus, "minus": _minus,
     "xmark": _xmark, "refresh": _refresh, "power": _power, "antenna": _antenna,
     "eye_slash": _eye_slash, "shift": _shift, "shift_fill": _shift_fill,
-    "backspace": _backspace, "lock": _lock,
+    "backspace": _backspace, "lock": _lock, "download": _download,
 }
 
 @functools.lru_cache(maxsize=512)
