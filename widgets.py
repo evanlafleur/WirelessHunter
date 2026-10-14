@@ -112,10 +112,19 @@ def signal_level(rssi):
 
 # ------------------------------------------------------------------ gestures
 
+MAX_FLING = 3000.0       # px/s - fastest fling we'll ever act on
+MIN_SAMPLE_GAP = 0.025   # s - events closer together than this are one sample
+
 class Gesture:
     """Turns raw down/move/up into tap-vs-drag, drag deltas, and fling
     velocity. `pressed` is the touch position while a tap is still
-    possible (used to draw iOS-style press highlights)."""
+    possible (used to draw iOS-style press highlights).
+
+    Events are timestamped when we *process* them, and the main loop hands
+    over a whole frame's worth at once - so a burst of events carries
+    near-identical timestamps however long the finger really took. Velocity
+    is therefore measured between per-frame samples (bursts collapsed into
+    one), never between individual events, and is capped."""
     def __init__(self):
         self.pressed = None
         self.dragging = False
@@ -133,7 +142,11 @@ class Gesture:
         """Returns (dx, dy) since the previous call once a drag has begun."""
         if self._start is None:
             return 0, 0
-        self._samples = (self._samples + [(time.monotonic(), x, y)])[-8:]
+        now = time.monotonic()
+        if len(self._samples) > 1 and now - self._samples[-1][0] < MIN_SAMPLE_GAP:
+            self._samples[-1] = (self._samples[-1][0], x, y)   # same burst: keep the first time, newest position
+        else:
+            self._samples = (self._samples + [(now, x, y)])[-8:]
         if not self.dragging:
             if abs(x - self._start[0]) <= TAP_SLOP and abs(y - self._start[1]) <= TAP_SLOP:
                 return 0, 0
@@ -155,13 +168,18 @@ class Gesture:
         if not was_drag:
             return "tap", (0, 0)
         now = time.monotonic()
-        recent = [s for s in samples if now - s[0] <= 0.12]
-        if len(recent) < 2 or now - recent[-1][0] > 0.08:
+        if len(samples) < 2:
             return "drag", (0, 0)
-        dt = recent[-1][0] - recent[0][0]
-        if dt <= 0:
+        gap = samples[-1][0] - samples[-2][0]
+        if now - samples[-1][0] > max(0.1, 1.6 * gap):
+            return "drag", (0, 0)    # finger rested before lifting: no fling
+        recent = [smp for smp in samples[-3:] if now - smp[0] <= 0.5]
+        if len(recent) < 2:
             return "drag", (0, 0)
-        return "drag", ((recent[-1][1] - recent[0][1]) / dt, (recent[-1][2] - recent[0][2]) / dt)
+        dt = max(recent[-1][0] - recent[0][0], 0.03)
+        vx = (recent[-1][1] - recent[0][1]) / dt
+        vy = (recent[-1][2] - recent[0][2]) / dt
+        return "drag", (max(-MAX_FLING, min(MAX_FLING, vx)), max(-MAX_FLING, min(MAX_FLING, vy)))
 
 # ----------------------------------------------------------------- list view
 
@@ -197,7 +215,7 @@ class ListView:
         self._bar_until = time.monotonic() + 0.8
 
     def fling(self, vy):
-        self.velocity = -vy
+        self.velocity = max(-MAX_FLING, min(MAX_FLING, -vy))
 
     def update(self, count):
         now = time.monotonic()

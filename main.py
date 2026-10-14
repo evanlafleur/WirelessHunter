@@ -74,6 +74,12 @@ def main():
     radar_last_refresh = time.monotonic()
     radar_was_active = False
 
+    # A touchscreen normally reports every touch twice - as FINGER* events
+    # and as synthesized MOUSE* events. Handling both would apply each drag
+    # twice, so once a MOUSE* event has been seen the FINGER* ones are
+    # ignored (they're only used if the panel never produces mouse events).
+    mouse_events_seen = False
+
     try:
         while True:
             # Network data refresh is throttled and only happens while the
@@ -113,6 +119,10 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+                    mouse_events_seen = True
+                elif mouse_events_seen and event.type in (pygame.FINGERDOWN, pygame.FINGERUP, pygame.FINGERMOTION):
+                    continue
 
                 if event.type in (pygame.MOUSEMOTION, pygame.FINGERMOTION):
                     # Drags scroll lists in every app and steer the radar needle.
