@@ -12,6 +12,7 @@ import textwrap
 
 import pygame
 import config
+from hiding import hide_whitelisted
 from theme import BLACK, WHITE, GRAY, GREEN, YELLOW, DIM, RED, BTN_BACK, HEADER_H, FOOTER_H, ICON_SIZE, TAP_SLOP
 from widgets import draw_button_bar
 
@@ -28,7 +29,7 @@ class UI:
         self.selected = None    # bssid, or None for list view
         self.tracking = False   # True = locked-channel live tracking screen
         self.peak_rssi = None
-        self.hide_mode = False  # filters out config.HIDDEN_SSIDS when True
+        self.hide_mode = False  # hides config.HIDDEN_SSIDS (and their sibling BSSIDs) when True
         self.on_track_start = on_track_start   # callback(channel)
         self.on_track_stop = on_track_stop     # callback()
         self.on_home = on_home                 # callback(), list screen only
@@ -42,7 +43,7 @@ class UI:
     def visible_networks(self, networks):
         if not self.hide_mode:
             return networks
-        return [n for n in networks if n["ssid"] not in config.HIDDEN_SSIDS]
+        return hide_whitelisted(networks, config.HIDDEN_SSIDS)
 
     def _visible_rows(self):
         h = config.SCREEN_SIZE[1] - HEADER_H - FOOTER_H

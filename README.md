@@ -91,6 +91,14 @@ networks currently in range, or delete entries) - changes are saved back
 to `.env`. In the WiFi Scanner app, tap the small icon in the top-right of
 the list screen's header to toggle hide mode on/off.
 
+Hide mode removes the whole access point, not just rows carrying the
+whitelisted name: a router also broadcasts nameless "(hidden)" twins whose
+MAC differs only in the first or last byte (e.g. `24:f5:a2:ad:72:7f` and
+`2a:f5:a2:ad:72:7f`), so those are hidden along with the named entry (see
+`hiding.py`). The one catch: a different device whose MAC happens to
+differ from yours only in the last byte (e.g. one built right after yours)
+gets hidden too.
+
 ## 6. Run it
 
 ```
