@@ -5,7 +5,9 @@ Launches into a phone-style home screen with app icons. Currently:
 direction-finding tracking screen), **Radar** (manual-sweep polar RSSI
 plot - no magnetometer needed, see below; currently switched off for
 maintenance), **Update System** (shows the installed version, lists
-what's new on GitHub, and updates + restarts on request), and **Settings**
+what's new on GitHub, and updates + restarts on request), **Saved Devices**
+(the devices you've saved from the scanner, with their details and your
+notes), and **Settings**
 (Wi-Fi connection for updates, SSID whitelist editor, scan-antenna picker,
 shutdown/reboot). More apps get added the same way.
 
@@ -173,8 +175,12 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
     row. Drag to scroll (it coasts when you flick), tap a row to open it,
     flip the **Hide** switch to hide whitelisted networks, **Home** goes
     back to the launcher
-  - **Detail**: info card (vendor, band, channel, signal, status) and a
-    **Track Signal** button
+  - **Detail**: info card (manufacturer, band, channel, security, signal,
+    status) and three buttons: **Track Signal**, **Whitelist** (adds or
+    removes the network's SSID from the hide-mode whitelist; tap again to
+    undo; hidden networks have no name to add) and **Save Device**
+    (records everything known about it - with an optional note - for the
+    Saved Devices app; saving again updates the record and edits the note)
   - **Tracking**: locks the channel hopper onto that one BSSID's channel
     (so you get frequent, uninterrupted readings instead of a hop-diluted
     one), shows a big live RSSI number, a capsule gauge with a peak-hold
@@ -239,7 +245,25 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
   Tap targets come from plain geometry functions so drawing and
   hit-testing can't drift apart
 - `sniffer.py` — Scapy-based beacon/probe-response capture, hops across a
-  channel list covering both 2.4G and 5G, tracks last-seen time per BSSID
+  channel list covering both 2.4G and 5G, tracks per BSSID: last/first seen,
+  beacon count, current and peak RSSI, and the fields below
+- `beacon.py` — parses a frame's raw bytes for: SSID (zero-byte "hidden"
+  SSIDs are treated as hidden), channel (DS element, else HT operation
+  element, else the radiotap frequency - so 5 GHz networks get a channel
+  too), security (WPA/WPA2/WPA3/WPA2-WPA3/Enterprise/OWE/WEP/Open from the
+  RSN and WPA elements), Wi-Fi generation (802.11n/ac/ax/be from the
+  capability elements), country, beacon interval and WPS
+- `saved_app.py` / `devicestore.py` — the **Saved Devices** app. Each saved
+  device is one JSON file in `saved_devices/` (gitignored; named after its
+  BSSID, e.g. `24-f5-a2-ad-72-7f.json`), so you can read them, copy them
+  off the Pi (`scp`), or back them up by hand. A record holds the SSID,
+  BSSID, manufacturer, band, channel, security, standard, country, beacon
+  interval, WPS, signal when saved and strongest seen, first/last seen,
+  beacons heard, the router's other BSSIDs, which antenna scanned it, your
+  note, and saved/updated times. The app lists them newest first; tap one
+  to see everything, **Edit Note**, or **Delete** (with a confirmation)
+- `whitelist.py` — add/remove SSIDs in the hide-mode whitelist and save
+  `.env`; shared by Settings and the scanner's detail screen
 - `oui.py` — offline MAC address -> manufacturer lookup using the bundled
   Wireshark-format `manuf.raw` (about 58,000 IEEE assignments, including
   the 28- and 36-bit sub-blocks; names are tidied, e.g. "Belkin

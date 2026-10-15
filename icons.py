@@ -137,12 +137,28 @@ def _download(s, u, c, level):
     _line(s, c, _p(u, 72, 38), _p(u, 50, 62), 10 * u)
     _line(s, c, _p(u, 20, 84), _p(u, 80, 84), 10 * u)
 
+def _bookmark(s, u, c, level):
+    pts = [(24, 8), (76, 8), (76, 92), (50, 68), (24, 92)]
+    pygame.draw.polygon(s, c, [_p(u, x, y) for x, y in pts])
+
+def _pencil(s, u, c, level):
+    _line(s, c, _p(u, 34, 66), _p(u, 70, 30), 18 * u)
+    pygame.draw.polygon(s, c, [_p(u, 14, 88), _p(u, 22, 60), _p(u, 42, 80)])
+
+def _trash(s, u, c, level):
+    _line(s, c, _p(u, 18, 26), _p(u, 82, 26), 9 * u)
+    _line(s, c, _p(u, 40, 14), _p(u, 60, 14), 8 * u)
+    pygame.draw.polygon(s, c, [_p(u, 26, 38), _p(u, 74, 38), _p(u, 68, 88), _p(u, 32, 88)])
+    for x in (42, 58):
+        _line(s, (c[0], c[1], c[2], 0), _p(u, x, 48), _p(u, x, 78), 5 * u)
+
 _GLYPHS = {
     "wifi": _wifi, "radar": _radar, "gear": _gear, "chevron_right": _chevron_right,
     "chevron_left": _chevron_left, "check": _check, "plus": _plus, "minus": _minus,
     "xmark": _xmark, "refresh": _refresh, "power": _power, "antenna": _antenna,
     "eye_slash": _eye_slash, "shift": _shift, "shift_fill": _shift_fill,
-    "backspace": _backspace, "lock": _lock, "download": _download,
+    "backspace": _backspace, "lock": _lock, "download": _download, "bookmark": _bookmark,
+    "pencil": _pencil, "trash": _trash,
 }
 
 @functools.lru_cache(maxsize=512)

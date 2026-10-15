@@ -6,6 +6,7 @@
 
 import config
 import theme
+import whitelist
 from theme import LABEL, LABEL2, GREEN, RED, MARGIN, font
 from icons import draw_glyph
 from widgets import (ListView, aa_circle, draw_cell, draw_nav_bar, draw_toolbar, fit_text,
@@ -16,28 +17,6 @@ W, H = config.SCREEN_SIZE
 ROW_H = 68
 LIST_TOP = theme.NAV_H + 84
 BADGE_ZONE = 76   # left slice of a row where the red minus deletes it
-
-def _add_ssid(ssid):
-    """Adds to the whitelist and saves. Returns (ok, message)."""
-    ssid = ssid.strip()
-    if not ssid:
-        return False, ""
-    if "," in ssid:
-        return False, "SSIDs containing commas aren't supported"
-    config.HIDDEN_SSIDS.add(ssid)
-    try:
-        config.save_hidden_ssids()
-    except OSError as e:
-        return False, f"couldn't save .env: {e}"
-    return True, f"Added {ssid}"
-
-def _remove_ssid(ssid):
-    config.HIDDEN_SSIDS.discard(ssid)
-    try:
-        config.save_hidden_ssids()
-    except OSError as e:
-        return False, f"couldn't save .env: {e}"
-    return True, f"Removed {ssid}"
 
 def _footnote(surface, string, y):
     for i, line in enumerate(wrap_text(font(theme.FOOTNOTE), string, W - 2 * MARGIN - 16)[:3]):
@@ -78,13 +57,13 @@ class WhitelistScreen(SettingsScreen):
         elif btn == 1:
             self.app.push(KeyboardScreen(
                 self.app, "Add SSID", max_len=32,
-                on_done=lambda t: self._say(_add_ssid(t))))
+                on_done=lambda t: self._say(whitelist.add(t))))
         if btn is not None:
             return
         items = self._items()
         idx = self.list.index_at(x, y, len(items))
         if idx is not None and x < BADGE_ZONE:
-            self._say(_remove_ssid(items[idx]))
+            self._say(whitelist.remove(items[idx]))
 
     def draw(self, surface):
         pressed = self.app.pressed
@@ -150,7 +129,7 @@ class NearbyScreen(SettingsScreen):
             return
         idx = self.list.index_at(x, y, len(self.ssids))
         if idx is not None:
-            self.parent._say(_add_ssid(self.ssids[idx][0]))
+            self.parent._say(whitelist.add(self.ssids[idx][0]))
             self._reload()
 
     def draw(self, surface):

@@ -6,8 +6,9 @@ import os
 import time
 import threading
 from collections import deque
-from scapy.all import AsyncSniffer, Dot11, Dot11Beacon, Dot11ProbeResp, Dot11Elt, RadioTap
+from scapy.all import AsyncSniffer, Dot11, Dot11Beacon, Dot11ProbeResp, RadioTap
 
+import beacon
 import config
 import system
 from apgroup import inherit_vendors
@@ -69,39 +70,38 @@ class Tracker:
         if not bssid:
             return
 
-        # SSID: empty string on a beacon means hidden network
-        ssid = None
-        elt = pkt.getlayer(Dot11Elt)
-        channel = None
-        while isinstance(elt, Dot11Elt):
-            if elt.ID == 0:  # SSID element
-                try:
-                    ssid = elt.info.decode(errors="ignore")
-                except Exception:
-                    ssid = ""
-            elif elt.ID == 3 and len(elt.info) >= 1:  # DS Parameter Set = channel
-                channel = elt.info[0]
-            elt = elt.payload.getlayer(Dot11Elt)
-
+        info = beacon.parse(pkt)
         try:
             rssi = pkt[RadioTap].dBm_AntSignal
         except Exception:
             rssi = None
 
-        band = "2.4G" if (channel and channel <= 14) else "5G"
         vendor = self.oui.lookup(bssid)
+        now = time.time()
 
         with self.lock:
             entry = self.networks.get(bssid, {})
             entry.update({
                 "bssid": bssid,
-                "ssid": ssid if ssid else None,   # None/"" => hidden
+                "ssid": info["ssid"],   # None => hidden
                 "vendor": vendor,
-                "band": band,
-                "channel": channel,
                 "rssi": rssi if rssi is not None else entry.get("rssi"),
-                "last_seen": time.time(),
+                "last_seen": now,
+                "first_seen": entry.get("first_seen", now),
+                "beacons": entry.get("beacons", 0) + 1,
+                "wps": entry.get("wps", False) or info["wps"],
             })
+            # keep what we already knew when this particular frame doesn't carry a field
+            for key in ("channel", "band", "security", "standard", "country", "interval"):
+                value = info[key]
+                if value is None:
+                    continue
+                if key == "security" and value in ("Open", "WEP") and entry.get("security") not in (None, "Open", "WEP"):
+                    continue   # a frame that merely lacks the RSN element isn't evidence the AP dropped its encryption
+                entry[key] = value
+            entry.setdefault("band", "5G")
+            if rssi is not None:
+                entry["rssi_max"] = max(entry.get("rssi_max", rssi), rssi)
             self.networks[bssid] = entry
 
             if rssi is not None:

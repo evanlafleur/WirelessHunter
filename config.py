@@ -6,6 +6,18 @@ import re
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")                # HIDDEN_SSIDS (gitignored)
 SETTINGS_PATH = os.path.join(BASE_DIR, "settings.json")  # values changed from the Settings app (gitignored)
+SAVED_DIR = os.path.join(BASE_DIR, "saved_devices")      # one JSON file per device saved from the scanner (gitignored)
+
+def fix_owner(path):
+    """The app runs as root, but the checkout belongs to a normal user:
+    hand files/folders we create inside it to that user so they stay
+    editable (and git, which also runs as that user, never trips on them)."""
+    try:
+        if os.geteuid() == 0:
+            st = os.stat(BASE_DIR)
+            os.chown(path, st.st_uid, st.st_gid)
+    except (OSError, AttributeError):
+        pass
 
 def _load_settings():
     try:
@@ -23,6 +35,7 @@ def save_setting(key, value):
     with open(tmp, "w") as f:
         json.dump(_settings, f, indent=2)
     os.replace(tmp, SETTINGS_PATH)
+    fix_owner(SETTINGS_PATH)
 
 def _load_scan_iface():
     name = _settings.get("scan_iface", "wlan1")
@@ -95,3 +108,4 @@ def save_hidden_ssids(path=None):
     with open(tmp, "w") as f:
         f.write("\n".join(out) + "\n")
     os.replace(tmp, path)
+    fix_owner(path)

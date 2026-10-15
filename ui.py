@@ -8,24 +8,25 @@
 # Run main.py, don't run this file directly.
 
 import textwrap
+import time
 
 import pygame
 
 import config
+import devicestore
 import theme
+import whitelist
 from hiding import hide_whitelisted
+from keyboard import TextInput
 from theme import (BG, CELL, LABEL, LABEL2, LABEL3, BLUE, GREEN, RED, MARGIN, CARD_RADIUS, FILL,
                    SEPARATOR, font)
 from icons import draw_glyph
-from widgets import (Gesture, ListView, aa_rrect, draw_button, draw_cell, draw_nav_bar,
-                     draw_switch, fit_text, nav_height, nav_left_rect, signal_level, switch_rect, text)
+from widgets import (Gesture, ListView, aa_rrect, band_label, draw_button, draw_cell, draw_nav_bar, draw_switch,
+                     draw_toast, fit_text, nav_height, nav_left_rect, signal_level, switch_rect, text)
 
 W, H = config.SCREEN_SIZE
 ROW_H = 80
 BUTTON_H = 60
-
-def band_label(band):
-    return {"2.4G": "2.4 GHz", "5G": "5 GHz"}.get(band, band or "")
 
 def row_detail(network, max_width):
     """Second line of a list row: "Manufacturer  ·  BSSID", with the
@@ -40,6 +41,13 @@ def row_detail(network, max_width):
 
 def button_rect():
     return pygame.Rect(MARGIN, H - BUTTON_H - 28, W - 2 * MARGIN, BUTTON_H)
+
+def action_rects():
+    """Detail screen's two secondary buttons, side by side above Track Signal:
+    (whitelist, save)."""
+    top = button_rect().y - 14 - 56
+    width = (W - 2 * MARGIN - 12) // 2
+    return (pygame.Rect(MARGIN, top, width, 56), pygame.Rect(MARGIN + width + 12, top, width, 56))
 
 def hide_hit_rect():
     return switch_rect().inflate(130, 30)
@@ -59,7 +67,12 @@ class UI:
         self.on_track_stop = on_track_stop     # callback()
         self.on_home = on_home                 # callback(), list screen only
         self.status_text = ""                  # capture status, shown while the list is empty
+        self.scan_iface = ""                   # recorded with saved devices
         self._count = 0                        # rows in the list as of the last draw
+        self.keyboard = TextInput()            # note entry when saving a device
+        self.entering_note = False
+        self._note_bssid = None
+        self._toast = None                     # (message, color, expires-at)
 
     def toggle_hide_mode(self):
         self.hide_mode = not self.hide_mode
@@ -77,20 +90,25 @@ class UI:
 
     def touch_drag(self, x, y):
         dx, dy = self.gesture.move(x, y)
-        if dy and self.selected is None:
+        if dy and self.selected is None and not self.entering_note:
             self.list.drag(dy, self._count)
 
     def touch_up(self, x, y, networks):
         kind, velocity = self.gesture.up(x, y)
         if kind == "tap":
-            if self.tracking:
+            if self.entering_note:
+                self._tap_note(x, y, networks)
+            elif self.tracking:
                 self._tap_track(x, y)
             elif self.selected is not None:
                 self._tap_detail(x, y, networks)
             else:
                 self._tap_list(x, y, networks)
-        elif kind == "drag" and self.selected is None:
+        elif kind == "drag" and self.selected is None and not self.entering_note:
             self.list.fling(velocity[1])
+
+    def say(self, message, color=LABEL):
+        self._toast = (message, color, time.monotonic() + 2.2)
 
     def _tap_list(self, x, y, networks):
         if nav_left_rect().collidepoint(x, y):
@@ -108,13 +126,53 @@ class UI:
         if nav_left_rect().collidepoint(x, y):
             self.selected = None
             return
+        n = next((net for net in networks if net["bssid"] == self.selected), None)
+        if n is None:
+            return
+        wl_rect, save_rect = action_rects()
         if button_rect().collidepoint(x, y):
-            n = next((net for net in networks if net["bssid"] == self.selected), None)
-            if n is not None and n.get("channel"):
+            if n.get("channel"):
                 self.tracking = True
                 self.peak_rssi = n["rssi"]
                 if self.on_track_start:
                     self.on_track_start(n["channel"])
+        elif wl_rect.collidepoint(x, y):
+            self._toggle_whitelist(n)
+        elif save_rect.collidepoint(x, y):
+            existing = devicestore.load(n["bssid"])
+            name = n["ssid"] or "Hidden Network"
+            self.keyboard.start(f"Note for {name} (optional)", initial=existing.get("note", "") if existing else "",
+                                max_len=200)
+            self.entering_note = True
+            self._note_bssid = n["bssid"]
+
+    def _toggle_whitelist(self, n):
+        ssid = n["ssid"]
+        if not ssid:
+            self.say("This network has no name to whitelist", LABEL2)
+        elif whitelist.contains(ssid):
+            ok, msg = whitelist.remove(ssid)
+            self.say("Removed from whitelist" if ok else msg, LABEL if ok else RED)
+        else:
+            ok, msg = whitelist.add(ssid)
+            self.say("Added to whitelist" if ok else msg, GREEN if ok else RED)
+
+    def _tap_note(self, x, y, networks):
+        result = self.keyboard.tap(x, y)
+        if result is None:
+            return
+        self.entering_note = False
+        if result == "cancel":
+            return
+        n = next((net for net in networks if net["bssid"] == self._note_bssid), None)
+        if n is None:
+            self.say("That network is no longer visible", RED)
+            return
+        try:
+            devicestore.save(n, networks, note=self.keyboard.text.strip(), iface=self.scan_iface)
+            self.say("Saved to Saved Devices", GREEN)
+        except OSError as e:
+            self.say(f"Couldn't save: {e}", RED)
 
     def _tap_track(self, x, y):
         if nav_left_rect().collidepoint(x, y) or button_rect().collidepoint(x, y):
@@ -126,6 +184,9 @@ class UI:
     # --- drawing ---
     def draw(self, networks, history=None):
         self.screen.fill(BG)
+        if self.entering_note:
+            self.keyboard.draw(self.screen, self.gesture.pressed)
+            return
         if self.tracking:
             self._draw_track(networks, history or [])
         elif self.selected is not None:
@@ -185,30 +246,45 @@ class UI:
         draw_nav_bar(s, "", left="Networks", pressed=pressed)
 
         level, color = signal_level(n["rssi"]) if n["alive"] else (0, LABEL3)
-        draw_glyph(s, "wifi", (W // 2, 140), 84, color, level)
-        text(s, fit_text(font(30, "bold"), name, W - 2 * MARGIN), font(30, "bold"), LABEL, (W // 2, 214), "midtop")
-        text(s, n["bssid"], font(theme.FOOTNOTE + 1), LABEL2, (W // 2, 258), "midtop")
+        draw_glyph(s, "wifi", (W // 2, 112), 72, color, level)
+        text(s, fit_text(font(30, "bold"), name, W - 2 * MARGIN), font(30, "bold"), LABEL, (W // 2, 160), "midtop")
+        text(s, n["bssid"], font(theme.FOOTNOTE + 1), LABEL2, (W // 2, 202), "midtop")
 
         rows = [
             ("Manufacturer", n["vendor"] or "Unknown", LABEL2),
             ("Band", band_label(n["band"]), LABEL2),
             ("Channel", str(n["channel"]) if n["channel"] else "Unknown", LABEL2),
+            ("Security", n.get("security") or "Unknown", LABEL2),
             ("Signal", f"{n['rssi']} dBm" if n["rssi"] is not None else "--", color if n["alive"] else LABEL2),
             ("Status", "Live" if n["alive"] else "Gone", GREEN if n["alive"] else LABEL2),
         ]
-        card = pygame.Rect(MARGIN, 300, W - 2 * MARGIN, 58 * len(rows))
+        row_h = 54
+        card = pygame.Rect(MARGIN, 240, W - 2 * MARGIN, row_h * len(rows))
         aa_rrect(s, card, CELL, CARD_RADIUS)
         for i, (label, value, vcolor) in enumerate(rows):
-            cy = card.y + 58 * i + 29
+            cy = card.y + row_h * i + row_h // 2
             text(s, label, font(theme.BODY), LABEL, (card.x + 18, cy), "midleft")
             text(s, fit_text(font(theme.BODY), value, card.w - 160), font(theme.BODY), vcolor,
                  (card.right - 18, cy), "midright")
             if i < len(rows) - 1:
-                pygame.draw.line(s, SEPARATOR, (card.x + 18, cy + 29), (card.right, cy + 29), 1)
+                pygame.draw.line(s, SEPARATOR, (card.x + 18, cy + row_h // 2), (card.right, cy + row_h // 2), 1)
+
+        wl_rect, save_rect = action_rects()
+        ssid = n["ssid"]
+        listed = whitelist.contains(ssid)
+        draw_button(s, wl_rect, "Whitelisted" if listed else "Whitelist", FILL,
+                    pressed=bool(pressed and wl_rect.collidepoint(pressed)), enabled=bool(ssid),
+                    text_color=GREEN if listed else BLUE, glyph="check" if listed else "plus", size=theme.SUBHEAD + 2)
+        saved = devicestore.is_saved(n["bssid"])
+        draw_button(s, save_rect, "Saved" if saved else "Save Device", FILL,
+                    pressed=bool(pressed and save_rect.collidepoint(pressed)),
+                    text_color=GREEN if saved else BLUE, glyph="check" if saved else "bookmark", size=theme.SUBHEAD + 2)
 
         rect = button_rect()
         draw_button(s, rect, "Track Signal", BLUE, pressed=bool(pressed and rect.collidepoint(pressed)),
                     enabled=bool(n.get("channel")))
+        if self._toast and time.monotonic() < self._toast[2]:
+            draw_toast(s, self._toast[0], card.bottom + 36, self._toast[1])
 
     def _draw_track(self, networks, history):
         s = self.screen

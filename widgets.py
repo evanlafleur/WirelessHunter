@@ -89,6 +89,9 @@ def wrap_text(fnt, string, max_width):
         lines.append(line)
     return lines
 
+def band_label(band):
+    return {"2.4G": "2.4 GHz", "5G": "5 GHz"}.get(band, band or "")
+
 def lerp(c0, c1, t):
     return tuple(int(c0[i] + (c1[i] - c0[i]) * t) for i in range(3))
 
@@ -332,11 +335,31 @@ def draw_toolbar(surface, items, pressed=None):
 
 # ------------------------------------------------------ buttons, cards, rows
 
-def draw_button(surface, rect, label, color=BLUE, pressed=False, enabled=True):
+def draw_button(surface, rect, label, color=BLUE, pressed=False, enabled=True, text_color=LABEL,
+                glyph=None, size=None):
+    """Filled rounded button. For a secondary button pass color=FILL and a
+    tinted text_color. `glyph` draws a small icon before the label."""
     rect = pygame.Rect(rect)
-    fill = press_shade(color, pressed) if enabled else FILL
+    fill = (CELL_PRESSED if pressed else color) if (enabled and color == FILL) else (press_shade(color, pressed) if enabled else FILL)
     aa_rrect(surface, rect, fill, CARD_RADIUS)
-    text(surface, label, font(theme.BODY, "semibold"), LABEL if enabled else LABEL3, rect.center, "center")
+    fg = text_color if enabled else LABEL3
+    f = font(size or theme.BODY, "semibold")
+    if glyph:
+        gw = 22 + 8 + f.size(label)[0]
+        x0 = rect.centerx - gw // 2
+        draw_glyph(surface, glyph, (x0 + 11, rect.centery), 22, fg)
+        text(surface, label, f, fg, (x0 + 30, rect.centery), "midleft")
+    else:
+        text(surface, label, f, fg, rect.center, "center")
+
+def draw_toast(surface, message, center_y, color=LABEL):
+    """Small rounded pill with a short message (quick confirmation)."""
+    f = font(theme.FOOTNOTE + 1, "medium")
+    w = min(W - 2 * MARGIN, f.size(message)[0] + 36)
+    rect = pygame.Rect(0, 0, w, 38)
+    rect.center = (W // 2, center_y)
+    aa_rrect(surface, rect, (58, 58, 60, 245), 19)
+    text(surface, fit_text(f, message, w - 24), f, color, rect.center, "center")
 
 def draw_card(surface, rect, color=CELL, radius=CARD_RADIUS):
     aa_rrect(surface, rect, color, radius)
