@@ -25,6 +25,8 @@ ROW_PITCH = 156     # icon + label + gap
 
 APPS = [
     {"id": "wifi", "label": "WiFi Scanner", "glyph": "wifi", "top": (88, 224, 112), "bottom": (24, 160, 68)},
+    {"id": "channels", "label": "Channels", "glyph": "bars", "top": (90, 220, 210), "bottom": (0, 150, 170)},
+    {"id": "bluetooth", "label": "Bluetooth", "glyph": "bluetooth", "top": (96, 150, 255), "bottom": (24, 64, 210)},
     {"id": "saved", "label": "Saved Devices", "glyph": "bookmark", "top": (255, 206, 84), "bottom": (255, 149, 10)},
     # "maintenance": the icon stays on the home screen but tapping it shows an
     # alert instead of launching. Remove the key to re-enable the app.

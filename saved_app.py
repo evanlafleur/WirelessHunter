@@ -85,10 +85,11 @@ def detail_rows(rec):
 
 
 class SavedApp:
-    def __init__(self, on_home=None):
+    def __init__(self, on_home=None, on_track=None):
         pygame.init()
         self.screen = pygame.Surface(config.SCREEN_SIZE)
         self.on_home = on_home
+        self.on_track = on_track      # callback(record): open the scanner's tracking screen
         self.gesture = Gesture()
         self.list = ListView(LIST_ROW_H, top=nav_height(large=True))
         self.detail = ListView(DETAIL_ROW_H, top=HERO_H + 60, bottom=H - theme.TOOLBAR_H)
@@ -167,11 +168,16 @@ class SavedApp:
             self.record = None
             self.reload()
             return
-        btn = toolbar_hit(x, y, 2)
+        btn = toolbar_hit(x, y, 3)
         if btn == 0:
+            if not self.record.get("channel"):
+                self.say("No channel was recorded for this device", LABEL2)
+            elif self.on_track:
+                self.on_track(self.record)
+        elif btn == 1:
             self.keyboard.start(f"Note for {self._name()}", initial=self.record.get("note", ""), max_len=200)
             self.editing = True
-        elif btn == 1:
+        elif btn == 2:
             self.confirming = True
 
     def _tap_keyboard(self, x, y):
@@ -286,4 +292,5 @@ class SavedApp:
         name = d.get("ssid") or "Hidden Network"
         text(s, fit_text(font(28, "bold"), name, W - 2 * MARGIN), font(28, "bold"), LABEL, (W // 2, 144), "midtop")
         text(s, d["bssid"], font(theme.FOOTNOTE + 1), LABEL2, (W // 2, 182), "midtop")
-        draw_toolbar(s, [("pencil", "Edit Note", "default"), ("trash", "Delete", "destructive")], pressed)
+        draw_toolbar(s, [("radar", "Track", "default" if d.get("channel") else "disabled"),
+                         ("pencil", "Edit Note", "default"), ("trash", "Delete", "destructive")], pressed)

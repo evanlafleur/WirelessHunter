@@ -395,6 +395,25 @@ def draw_switch(surface, rect, on):
     aa_circle(surface, (kx, rect.centery + 1), rect.h // 2 - 1, (0, 0, 0, 70))
     aa_circle(surface, (kx, rect.centery), rect.h // 2 - 3, (255, 255, 255))
 
+def segmented_index(rect, count, x, y):
+    """Which segment of a segmented control a tap landed on, or None."""
+    rect = pygame.Rect(rect)
+    if not rect.collidepoint(x, y):
+        return None
+    return min(count - 1, int((x - rect.x) * count // rect.w))
+
+def draw_segmented(surface, rect, labels, selected, pressed=None):
+    """iOS segmented control: a rounded track with a raised pill under the selection."""
+    rect = pygame.Rect(rect)
+    aa_rrect(surface, rect, FILL, 10)
+    seg_w = rect.w / len(labels)
+    for i, label in enumerate(labels):
+        seg = pygame.Rect(int(rect.x + i * seg_w), rect.y, int(seg_w), rect.h)
+        if i == selected:
+            aa_rrect(surface, seg.inflate(-6, -6), (99, 99, 102), 8)
+        text(surface, label, font(theme.FOOTNOTE + 1, "semibold" if i == selected else "medium"),
+             LABEL if i == selected else LABEL2, seg.center, "center")
+
 # ----------------------------------------------------------- alert + HUD
 
 ALERT_W = 340

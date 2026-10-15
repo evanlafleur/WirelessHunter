@@ -7,7 +7,9 @@ plot - no magnetometer needed, see below; currently switched off for
 maintenance), **Update System** (shows the installed version, lists
 what's new on GitHub, and updates + restarts on request), **Saved Devices**
 (the devices you've saved from the scanner, with their details and your
-notes), and **Settings**
+notes), **Channels** (a Wi-Fi analyzer graph and quietest-channel
+recommendation), **Bluetooth** (nearby BLE devices, with tracker-tag
+detection and a hot/cold finder), and **Settings**
 (Wi-Fi connection for updates, SSID whitelist editor, scan-antenna picker,
 shutdown/reboot). More apps get added the same way.
 
@@ -261,7 +263,39 @@ sudo -E venv/bin/python3 test_display.py    # cycles red/green/blue + text
   interval, WPS, signal when saved and strongest seen, first/last seen,
   beacons heard, the router's other BSSIDs, which antenna scanned it, your
   note, and saved/updated times. The app lists them newest first; tap one
-  to see everything, **Edit Note**, or **Delete** (with a confirmation)
+  to see everything, **Track** it, **Edit Note**, or **Delete** (with a
+  confirmation). **Track** jumps to the WiFi Scanner's tracking screen and
+  locks onto the saved channel; if the device isn't in range yet the screen
+  says "Searching for this device…" and picks it up as soon as its beacons
+  are heard (it also turns hide mode off so a whitelisted device can't be
+  filtered out of your search)
+- `channels.py` / `channel_app.py` — the **Channels** app. A graph of every
+  live network on the chosen band (2.4 / 5 GHz switch): 2.4 GHz networks are
+  drawn as overlapping curves because their channels overlap, 5 GHz as
+  separate peaks, coloured and labelled for the strongest few. Below it,
+  each occupied channel with its network count, strongest signal and an
+  interference bar; tap one to list the networks on it (and how many more
+  overlap from neighbouring channels). The **Quietest** channel is chosen
+  from 1/6/11 on 2.4 GHz and the non-DFS channels on 5 GHz (DFS channels can
+  be forced to hop by radar). The interference figure is an estimate: it
+  sums received power weighted by channel overlap, and can't see whether a
+  neighbour is using a bonded 40/80 MHz channel. Follows hide mode
+- `bluetooth_app.py` / `bluetooth_scan.py` / `btid.py` — the **Bluetooth**
+  app. Uses the Pi's built-in Bluetooth (shared chip with `wlan0`, so the
+  Alfa isn't involved; range is short, roughly 10 m) via the `bleak`
+  library, only while the app is open. Lists nearby Bluetooth Low Energy
+  devices strongest first with name, device type, manufacturer (Bluetooth
+  SIG company ID, bundled in `btdata/`) and signal; an **All / Trackers**
+  switch; tap one for its details, then **Track** for a hot/cold screen
+  (smoothed signal, a Very close / Close / Nearby / Far word, peak-hold
+  gauge, trend). Tracker tags are flagged: Apple Find My accessories
+  (which includes AirTags - third-party Find My tags look the same, so
+  they're all labelled "Find My tracker"), Tile and Samsung SmartTag.
+  Identification is heuristic. Limits: BLE only (classic Bluetooth devices
+  answer only while pairing), and many phones randomise their address so a
+  device can reappear under a new one. If the library, adapter or radio is
+  missing the screen says what to do (`pip install -r requirements.txt`,
+  `sudo rfkill unblock bluetooth`, `sudo systemctl start bluetooth`)
 - `whitelist.py` — add/remove SSIDs in the hide-mode whitelist and save
   `.env`; shared by Settings and the scanner's detail screen
 - `oui.py` — offline MAC address -> manufacturer lookup using the bundled

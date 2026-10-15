@@ -24,6 +24,8 @@ from launcher import Launcher
 from settings_app import SettingsApp
 from update_app import UpdateApp
 from saved_app import SavedApp
+from channel_app import ChannelApp
+from bluetooth_app import BluetoothApp
 import updater
 from display import Display
 
@@ -44,11 +46,21 @@ def main():
             update_app.on_enter()   # check GitHub every time the app is opened
         elif app_id == "saved":
             saved_app.on_enter()    # re-read the saved_devices folder
+        elif app_id == "channels":
+            channel_app.on_enter()
+        elif app_id == "bluetooth":
+            bluetooth_app.on_enter()    # starts scanning; it stops again when you leave
+
+    def track_saved(record):
+        nonlocal current_app
+        wifi_ui.track_saved(record)
+        current_app = "wifi"
 
     def restart():
         # called by the Update app once new code is installed: release the
         # display and capture, then hand over to the restart logic
         tracker.stop()
+        bluetooth_app.scanner.stop()
         display.close()
         updater.restart_process()
 
@@ -65,7 +77,9 @@ def main():
     )
     settings_app = SettingsApp(on_home=go_home, tracker=tracker)
     update_app = UpdateApp(on_home=go_home, on_restart=restart)
-    saved_app = SavedApp(on_home=go_home)
+    saved_app = SavedApp(on_home=go_home, on_track=track_saved)
+    channel_app = ChannelApp(on_home=go_home)
+    bluetooth_app = BluetoothApp(on_home=go_home)
     display = Display()
 
     clock = pygame.time.Clock()
@@ -77,6 +91,7 @@ def main():
     radar_networks = tracker.snapshot()
     radar_last_refresh = time.monotonic()
     radar_was_active = False
+    channel_last_refresh = float("-inf")
 
     # A touchscreen normally reports every touch twice - as FINGER* events
     # and as synthesized MOUSE* events. Handling both would apply each drag
@@ -120,6 +135,14 @@ def main():
             else:
                 radar_was_active = False
 
+            if current_app == "channels":
+                now = time.monotonic()
+                if now - channel_last_refresh >= config.DETAIL_REFRESH_SEC:
+                    channel_app.set_networks(wifi_ui.visible_networks(tracker.snapshot()))
+                    channel_last_refresh = now
+            else:
+                channel_last_refresh = float("-inf")     # refresh immediately next time it opens
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return
@@ -150,6 +173,10 @@ def main():
                         update_app.touch_drag(lx, ly)
                     elif current_app == "saved":
                         saved_app.touch_drag(lx, ly)
+                    elif current_app == "channels":
+                        channel_app.touch_drag(lx, ly)
+                    elif current_app == "bluetooth":
+                        bluetooth_app.touch_drag(lx, ly)
                     continue
 
                 if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP,
@@ -195,6 +222,16 @@ def main():
                         saved_app.touch_down(lx, ly)
                     else:
                         saved_app.touch_up(lx, ly)
+                elif current_app == "channels":
+                    if is_down:
+                        channel_app.touch_down(lx, ly)
+                    else:
+                        channel_app.touch_up(lx, ly)
+                elif current_app == "bluetooth":
+                    if is_down:
+                        bluetooth_app.touch_down(lx, ly)
+                    else:
+                        bluetooth_app.touch_up(lx, ly)
 
             wifi_ui.status_text = tracker.status
             wifi_ui.scan_iface = tracker.iface
@@ -217,12 +254,19 @@ def main():
             elif current_app == "saved":
                 saved_app.draw()
                 display.push(saved_app.screen)
+            elif current_app == "channels":
+                channel_app.draw()
+                display.push(channel_app.screen)
+            elif current_app == "bluetooth":
+                bluetooth_app.draw()
+                display.push(bluetooth_app.screen)
 
             clock.tick(30)  # touch feels more responsive at a higher rate than the old button UI
     except KeyboardInterrupt:
         pass
     finally:
         tracker.stop()
+        bluetooth_app.scanner.stop()
         display.close()
 
 if __name__ == "__main__":

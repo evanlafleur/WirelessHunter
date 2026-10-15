@@ -73,6 +73,7 @@ class UI:
         self.entering_note = False
         self._note_bssid = None
         self._toast = None                     # (message, color, expires-at)
+        self._track_record = None              # saved device being tracked before it's been heard
 
     def toggle_hide_mode(self):
         self.hide_mode = not self.hide_mode
@@ -106,6 +107,19 @@ class UI:
                 self._tap_list(x, y, networks)
         elif kind == "drag" and self.selected is None and not self.entering_note:
             self.list.fling(velocity[1])
+
+    def track_saved(self, record):
+        """Jump straight into tracking a saved device (from the Saved Devices
+        app). It may not be in range yet: the tracking screen shows a
+        searching state until its beacons are heard on the saved channel."""
+        self.hide_mode = False          # you asked for this one - don't let hide mode filter it out
+        self.selected = record["bssid"]
+        self.tracking = True
+        self.peak_rssi = None
+        self._track_record = record
+        self.entering_note = False
+        if self.on_track_start and record.get("channel"):
+            self.on_track_start(record["channel"])
 
     def say(self, message, color=LABEL):
         self._toast = (message, color, time.monotonic() + 2.2)
@@ -178,6 +192,7 @@ class UI:
         if nav_left_rect().collidepoint(x, y) or button_rect().collidepoint(x, y):
             self.tracking = False
             self.peak_rssi = None
+            self._track_record = None
             if self.on_track_stop:
                 self.on_track_stop()
 
@@ -289,6 +304,14 @@ class UI:
     def _draw_track(self, networks, history):
         s = self.screen
         n = next((x for x in networks if x["bssid"] == self.selected), None)
+        searching = False
+        rec = self._track_record
+        if n is None and rec and rec["bssid"] == self.selected:
+            searching = True
+            n = {"ssid": rec.get("ssid"), "bssid": rec["bssid"], "channel": rec.get("channel"),
+                 "band": rec.get("band"), "rssi": None, "alive": False}
+        elif n is not None:
+            self._track_record = None   # it's in range now: from here on it's tracked like any other network
         if n is None:
             self.tracking = False
             self.selected = None
@@ -308,7 +331,8 @@ class UI:
         _, color = signal_level(rssi)
 
         text(s, str(rssi) if rssi is not None else "--", font(104, "bold"), color, (W // 2, 232), "center")
-        text(s, "dBm", font(theme.SUBHEAD, "medium"), LABEL2, (W // 2, 304), "center")
+        text(s, "Searching for this device…" if searching else "dBm", font(theme.SUBHEAD, "medium"), LABEL2,
+             (W // 2, 304), "center")
 
         # capsule gauge with a peak-hold tick
         gx, gw, gy = MARGIN + 12, W - 2 * MARGIN - 24, 350

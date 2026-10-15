@@ -152,13 +152,22 @@ def _trash(s, u, c, level):
     for x in (42, 58):
         _line(s, (c[0], c[1], c[2], 0), _p(u, x, 48), _p(u, x, 78), 5 * u)
 
+def _bars(s, u, c, level):
+    for x, top in ((20, 52), (40, 22), (60, 40), (80, 12)):
+        _line(s, c, _p(u, x, 88), _p(u, x, top + 6), 13 * u)
+
+def _bluetooth(s, u, c, level):
+    pts = [(26, 30), (74, 70), (50, 92), (50, 8), (74, 30), (26, 70)]
+    for a, b in zip(pts, pts[1:]):
+        _line(s, c, _p(u, *a), _p(u, *b), 9 * u)
+
 _GLYPHS = {
     "wifi": _wifi, "radar": _radar, "gear": _gear, "chevron_right": _chevron_right,
     "chevron_left": _chevron_left, "check": _check, "plus": _plus, "minus": _minus,
     "xmark": _xmark, "refresh": _refresh, "power": _power, "antenna": _antenna,
     "eye_slash": _eye_slash, "shift": _shift, "shift_fill": _shift_fill,
     "backspace": _backspace, "lock": _lock, "download": _download, "bookmark": _bookmark,
-    "pencil": _pencil, "trash": _trash,
+    "pencil": _pencil, "trash": _trash, "bars": _bars, "bluetooth": _bluetooth,
 }
 
 @functools.lru_cache(maxsize=512)
